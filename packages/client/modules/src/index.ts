@@ -31,10 +31,12 @@ import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
-import { optionalStringArray, stripClientSuffix } from './client/manifest.ts'
+import { clientExportPath, optionalStringArray } from './client/manifest.ts'
 import type { WebBootEntry, WebBootGraph } from './client/manifest.ts'
+import { orderByModuleGraph } from './client/order.ts'
 
 export { stripClientSuffix } from './client/manifest.ts'
+export { orderByModuleGraph } from './client/order.ts'
 export type {
   BootManifest, BootModuleRow, BootPluginRow, WebBootEntry, WebBootGraph,
 } from './client/manifest.ts'
@@ -145,19 +147,6 @@ function parseDshClient(pkgName: string, value: unknown): DshClientDeclaration |
   }
 }
 
-/** Resolve `exports["./client"]` to a relative path, accepting the string and one-level conditional forms. */
-function clientExportOf(pkgName: string, exportsField: unknown): string | undefined {
-  if (typeof exportsField !== 'object' || exportsField === null) return undefined
-  const client = (exportsField as Record<string, unknown>)['./client']
-  if (client === undefined) return undefined
-  if (typeof client === 'string') return client
-  if (typeof client === 'object' && client !== null) {
-    const fallback = (client as Record<string, unknown>).default
-    if (typeof fallback === 'string') return fallback
-  }
-  throw new Error(`client-modules: ${pkgName} exports["./client"] must be a string or an object with a string default`)
-}
-
 /** sha1 content hash shortened to 12 hex chars (bundle rev / graph rev). */
 function shortHash(input: string | Buffer): string {
   return createHash('sha1').update(input).digest('hex').slice(0, 12)
@@ -175,50 +164,6 @@ function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEnt
   }
 }
 
-/**
- * Order composed rows so every requested dynamic package precedes its
- * consumers. An `external` specifier is either the package row it names
- * (`<pkg>/client` aliases the bare package) or a static-table name that adds no
- * graph edge.
- * @param entries - composed rows in scan order.
- * @returns the same rows reordered; scan order breaks every tie.
- * @throws {Error} when a row requests itself or when the module graph has a
- * cycle; the message lists the packages on it.
- */
-export function orderByModuleGraph(entries: readonly WebBootEntry[]): WebBootEntry[] {
-  const rowsById = new Map<string, WebBootEntry>()
-  for (const entry of entries) rowsById.set(entry.id, entry)
-  const ordered: WebBootEntry[] = []
-  const placed = new Set<string>()
-  const open: string[] = []
-  const visit = (entry: WebBootEntry): void => {
-    if (placed.has(entry.id)) return
-    const cycleStart = open.indexOf(entry.id)
-    if (cycleStart !== -1) {
-      throw new Error(
-        `client-modules: module graph cycle ${[...open.slice(cycleStart), entry.id].join(' -> ')} `
-        + '— a requested package row must precede its consumers, and factory-form CJS cannot deliver partial exports',
-      )
-    }
-    open.push(entry.id)
-    for (const name of entry.external ?? []) {
-      const dependency = rowsById.get(name) ?? rowsById.get(stripClientSuffix(name))
-      if (dependency === entry) {
-        throw new Error(
-          `client-modules: "${entry.id}" requests module "${name}" that it answers itself `
-          + '— a row must not declare its own package in dsh.client.external',
-        )
-      }
-      if (dependency !== undefined) visit(dependency)
-    }
-    open.pop()
-    placed.add(entry.id)
-    ordered.push(entry)
-  }
-  for (const entry of entries) visit(entry)
-  return ordered
-}
-
 /** Bootstrap package whose ordinary client bundle supplies the module-system implementation. */
 const CLIENT_MODULES_ID = '@deepseek-ai/dsh-client-modules'
 
@@ -229,18 +174,16 @@ const CLIENT_RUNTIME_ID = '@deepseek-ai/dsh-client-runtime'
 const PARSER_PRELOAD_IDS = [CLIENT_MODULES_ID, CLIENT_RUNTIME_ID] as const
 
 /**
- * The boot protocol as index injection rows. The inline registration queue
- * precedes blocking classic scripts for modules' and runtime's ordinary
- * `lib/client.js` artifacts. Its `create()` method materializes the modules
- * bundle, delegates construction to that bundle, and leaves the same facade
- * in live-registration mode. The graph global follows before the shell reads
- * it.
- * @param graph - the composed entry graph.
- * @returns head rows in execution order: queue script, preload scripts, graph global.
+ * The HTML-installed `window.__ModuleLoader__` queue facade: a pending
+ * registration queue that becomes the live module-system target once
+ * `create()` materializes the modules bundle. The desktop app emits this
+ * same script from its build (no Host HTML), so the string is the single
+ * source of truth for both injection paths.
+ * @returns the self-contained facade script.
  */
-export function bootInjections(graph: WebBootGraph): IndexInjection[] {
+export function loaderFacadeScript(): string {
   const bootstrapId = JSON.stringify(CLIENT_MODULES_ID)
-  const queue = `(()=>{
+  return `(()=>{
 const pendingQueue=[]
 window.__ModuleLoader__={
   mode:"queue",
@@ -262,6 +205,20 @@ window.__ModuleLoader__={
   }
 }
 })()`
+}
+
+/**
+ * The boot protocol as index injection rows. The inline registration queue
+ * precedes blocking classic scripts for modules' and runtime's ordinary
+ * `lib/client.js` artifacts. Its `create()` method materializes the modules
+ * bundle, delegates construction to that bundle, and leaves the same facade
+ * in live-registration mode. The graph global follows before the shell reads
+ * it.
+ * @param graph - the composed entry graph.
+ * @returns head rows in execution order: queue script, preload scripts, graph global.
+ */
+export function bootInjections(graph: WebBootGraph): IndexInjection[] {
+  const queue = loaderFacadeScript()
   const preload = PARSER_PRELOAD_IDS.map(id => graph.entries.find(entry => entry.id === id))
     .filter((entry): entry is WebBootEntry => entry !== undefined)
     .map((entry): IndexInjection => ({ kind: 'script-src', placement: 'head', src: entry.url }))
@@ -339,6 +296,10 @@ export class ClientModuleRegistry extends Service {
     ctx.effect(
       () => ctx.webServer.register({ kind: 'prefix', path: '/plugins', handler: this.serveBundle }),
       'client-modules: bundle route',
+    )
+    ctx.effect(
+      () => ctx.webServer.register({ kind: 'exact', path: '/plugins/boot.json', handler: this.serveBoot }),
+      'client-modules: boot route',
     )
     ctx.on('webserver/index-inject', (table) => {
       table.push(...bootInjections(this.composed))
@@ -448,7 +409,7 @@ export class ClientModuleRegistry extends Service {
       this.pkgMeta.set(pkgName, null)
       return null
     }
-    const clientRel = clientExportOf(pkgName, pkg.exports)
+    const clientRel = clientExportPath(pkgName, pkg.exports)
     if (clientRel === undefined) {
       throw new Error(`client-modules: ${pkgName} declares dsh.client but exports no "./client" bundle`)
     }
@@ -524,6 +485,25 @@ export class ClientModuleRegistry extends Service {
     }
     this.composed = composed
     this.notifyGraphChanged()
+  }
+
+  /**
+   * Serve the boot protocol (the `__ModuleLoader__` queue script, the parser
+   * preload bundle URLs, and the `__DSH_BOOT__` graph) as JSON for a client
+   * shell that serves its own static frontend, so it can install the boot
+   * face before its shell runs.
+   */
+  private readonly serveBoot = (req: IncomingMessage, res: ServerResponse): void => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405)
+      res.end()
+      return
+    }
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-cache',
+    })
+    res.end(JSON.stringify(bootInjections(this.graph())))
   }
 
   private readonly serveBundle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {

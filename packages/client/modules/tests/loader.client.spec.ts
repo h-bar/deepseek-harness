@@ -324,6 +324,20 @@ describe('boot manifest wire', () => {
     ])
   })
 
+  it('accepts an activation-only roster (no graph rev, no per-entry url/rev)', () => {
+    const manifest = parseBootManifest({
+      entries: [
+        { id: 'a', external: ['react'] },
+        { id: 'b' },
+      ],
+    })
+    expect(manifest.rev).toBeUndefined()
+    expect(manifest.modules).toEqual([
+      { id: 'a', external: ['react'] },
+      { id: 'b', external: [] },
+    ])
+  })
+
   it('rejects a non-array external', () => {
     expect(() => parseBootManifest({
       rev: 'graph',

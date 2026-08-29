@@ -40,6 +40,9 @@
     "bundle": "tsdown",
     "watch": "tsdown --watch"
   },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
   "license": "MIT",
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",

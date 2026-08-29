@@ -79,10 +79,10 @@ export interface WebBootGraph {
 export interface BootModuleRow {
   /** Entry name == package name (module-table key). */
   id: string
-  /** Bundle endpoint, '/plugins/<id>/client.js?rev=<rev>'. */
-  url: string
-  /** Bundle content hash. */
-  rev: string
+  /** Bundle endpoint, '/plugins/<id>/client.js?rev=<rev>'. Absent when the client code ships with the app. */
+  url?: string
+  /** Bundle content hash. Absent when the client code ships with the app. */
+  rev?: string
   /** Module specifiers this row requests from the module table ([] when the wire omits them). */
   external: string[]
 }
@@ -99,8 +99,8 @@ export interface BootPluginRow {
 
 /** The parsed boot manifest: one wire, two consumer views. */
 export interface BootManifest {
-  /** Consistency anchor over the whole graph. */
-  rev: string
+  /** Consistency anchor over the whole graph. Absent in an activation-only roster. */
+  rev?: string
   /** Rows as the module table consumes them. */
   modules: BootModuleRow[]
   /** Rows as entry composition consumes them. */
@@ -138,6 +138,27 @@ export function stripClientSuffix(spec: string): string {
 }
 
 /**
+ * Resolve a package's `exports["./client"]` to its relative path, accepting the
+ * string and one-level `{ default }` conditional forms. Returns undefined when
+ * the export is absent; throws when it is present but malformed. Shared by the
+ * node half's activation scan and the desktop shell's roster derivation.
+ * @param pkgName - package name, for the malformed-export diagnostic.
+ * @param exportsField - the package.json `exports` object.
+ * @returns the `./client` path, or undefined when there is no `./client` export.
+ */
+export function clientExportPath(pkgName: string, exportsField: unknown): string | undefined {
+  if (typeof exportsField !== 'object' || exportsField === null) return undefined
+  const client = (exportsField as Record<string, unknown>)['./client']
+  if (client === undefined) return undefined
+  if (typeof client === 'string') return client
+  if (typeof client === 'object' && client !== null) {
+    const fallback = (client as Record<string, unknown>).default
+    if (typeof fallback === 'string') return fallback
+  }
+  throw new Error(`client-modules: ${pkgName} exports["./client"] must be a string or an object with a string default`)
+}
+
+/**
  * Parse `window.__DSH_BOOT__` into the two consumer views. Wire boundary:
  * a missing or malformed graph throws (the shell shows the loud failure —
  * a page without a valid manifest cannot boot anything).
@@ -149,9 +170,6 @@ export function parseBootManifest(wire: unknown): BootManifest {
     throw new Error('client-modules: window.__DSH_BOOT__ is missing or not an object')
   }
   const graph = wire as Record<string, unknown>
-  if (typeof graph.rev !== 'string') {
-    throw new Error('client-modules: boot manifest rev must be a string')
-  }
   if (!Array.isArray(graph.entries)) {
     throw new Error('client-modules: boot manifest entries must be an array')
   }
@@ -163,9 +181,11 @@ export function parseBootManifest(wire: unknown): BootManifest {
     }
     const row = value as Record<string, unknown>
     const where = typeof row.id === 'string' ? `"${row.id}"` : JSON.stringify(row)
-    if (typeof row.id !== 'string' || typeof row.url !== 'string' || typeof row.rev !== 'string') {
-      throw new Error(`client-modules: boot manifest entry ${where} must carry string id/url/rev`)
+    if (typeof row.id !== 'string') {
+      throw new Error(`client-modules: boot manifest entry ${where} must carry a string id`)
     }
+    const rowUrl = typeof row.url === 'string' ? row.url : undefined
+    const rowRev = typeof row.rev === 'string' ? row.rev : undefined
     const subject = `boot manifest entry ${where}`
     const inject = optionalStringArray(subject, 'inject', row.inject)
     const external = optionalStringArray(subject, 'external', row.external)
@@ -174,8 +194,8 @@ export function parseBootManifest(wire: unknown): BootManifest {
     }
     modules.push({
       id: row.id,
-      url: row.url,
-      rev: row.rev,
+      ...(rowUrl !== undefined ? { url: rowUrl } : {}),
+      ...(rowRev !== undefined ? { rev: rowRev } : {}),
       external: external === undefined ? [] : [...external],
     })
     plugins.push({
@@ -184,7 +204,7 @@ export function parseBootManifest(wire: unknown): BootManifest {
       immediately: row.immediately === true,
     })
   }
-  return { rev: graph.rev, modules, plugins }
+  return { ...(typeof graph.rev === 'string' ? { rev: graph.rev } : {}), modules, plugins }
 }
 
 /** One client bundle's factory registration submitted through `window.__ModuleLoader__.load`. */

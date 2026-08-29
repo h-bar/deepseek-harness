@@ -4,27 +4,12 @@
  * documented on the public interfaces in `./manifest.ts`; this file owns the
  * state tables and the load/materialize machinery.
  */
+import { loadBundleScript } from './load-bundle.ts'
 import { stripClientSuffix } from './manifest.ts'
 import type {
   BootManifest, BootModuleRow, ClientBundleRegistration, ClientModuleLoader, ClientModuleRecord,
   ClientModuleSystemOptions,
 } from './manifest.ts'
-
-/** Default bundle-load hook: same-origin external classic script. */
-const defaultLoadBundle = (url: string): Promise<void> => new Promise((resolve, reject) => {
-  const el = document.createElement('script')
-  el.async = true
-  el.src = url
-  el.addEventListener('load', () => {
-    el.remove()
-    resolve()
-  }, { once: true })
-  el.addEventListener('error', () => {
-    el.remove()
-    reject(new Error(`client-modules: bundle script ${url} failed to load`))
-  }, { once: true })
-  document.head.append(el)
-})
 
 /**
  * Claim and inventory the <style> tags a factory injected during
@@ -72,7 +57,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
   constructor(options: ClientModuleSystemOptions) {
     this.manifest = options.manifest
     this.seed = new Map(Object.entries(options.staticModules))
-    this.loadBundle = options.loadBundle ?? defaultLoadBundle
+    this.loadBundle = options.loadBundle ?? loadBundleScript
 
     for (const row of options.manifest.modules) {
       if (this.graphRows.has(row.id)) throw new Error(`client-modules: duplicate graph entry "${row.id}"`)
@@ -115,6 +100,9 @@ export class ClientModuleSystem implements ClientModuleLoader {
     const pending = this.pendingArrival.get(id)
     if (pending !== undefined) return pending
     if (this.loadCache.has(id) || this.factories.has(id)) return Promise.resolve()
+    if (url === undefined) {
+      return Promise.reject(new Error(`client-modules: bundle "${id}" was not bundled and its graph row carries no URL`))
+    }
     const task = this.loadBundle(url).then(() => {
       if (!this.factories.has(id)) {
         throw new Error(`client-modules: bundle ${url} loaded without registering "${id}" via __ModuleLoader__.load`)

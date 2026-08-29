@@ -51,7 +51,9 @@ function writeBuiltPackage(packageName: string, client: Record<string, unknown>)
 }
 
 /** Construct the node-half service and capture its plugin-bundle route. */
-function constructWithRoute(packageNames: string[]): { service: ClientModuleRegistry; route: WebRoute } {
+function constructWithRoute(
+  packageNames: string[],
+): { service: ClientModuleRegistry; route: WebRoute; bootRoute: WebRoute } {
   const ctx = new Context()
   ctx.baseUrl = pathToFileURL(root!).href + '/'
   ctx.provide('loader', {
@@ -62,10 +64,12 @@ function constructWithRoute(packageNames: string[]): { service: ClientModuleRegi
     },
   })
   let route: WebRoute | undefined
+  let bootRoute: WebRoute | undefined
   const webServer: Pick<WebServer, 'port' | 'register' | 'tapIndex'> = {
     port: 0,
     register: (candidate) => {
       if (candidate.path === '/plugins') route = candidate
+      if (candidate.path === '/plugins/boot.json') bootRoute = candidate
       return () => {}
     },
     tapIndex: () => () => {},
@@ -73,7 +77,8 @@ function constructWithRoute(packageNames: string[]): { service: ClientModuleRegi
   ctx.provide('webServer', webServer as WebServer)
   const service = new ClientModuleRegistry(ctx)
   if (route === undefined) throw new Error('client bundle route was not registered')
-  return { service, route }
+  if (bootRoute === undefined) throw new Error('client boot route was not registered')
+  return { service, route, bootRoute }
 }
 
 /** Construct the node-half service over the enabled fixture entries. */
@@ -244,6 +249,44 @@ describe('client bundle activation', () => {
     })
     expect(body).toBe(map)
   })
+
+  it('serves the boot protocol as JSON and rejects non-GET/HEAD requests', () => {
+    const packageName = '@fixture/boot-protocol'
+    writeBuiltPackage(packageName, {})
+    const { bootRoute } = constructWithRoute([packageName])
+    let status = 0
+    let headers: Record<string, string> | undefined
+    let body = ''
+    const response = {
+      writeHead(nextStatus: number, nextHeaders?: Record<string, string>) {
+        status = nextStatus
+        headers = nextHeaders
+        return response
+      },
+      end(chunk?: Uint8Array) {
+        body = chunk === undefined ? '' : Buffer.from(chunk).toString('utf8')
+        return response
+      },
+    } as unknown as ServerResponse
+
+    bootRoute.handler({ method: 'GET', url: '/plugins/boot.json' } as IncomingMessage, response)
+    expect(status).toBe(200)
+    expect(headers).toEqual({
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-cache',
+    })
+    const payload = JSON.parse(body) as { kind: string; name?: string; value?: { entries: unknown[] } }[]
+    expect(payload[0]).toMatchObject({ kind: 'script', placement: 'head' })
+    expect(payload.at(-1)).toMatchObject({ kind: 'global', name: '__DSH_BOOT__' })
+    expect(payload.at(-1)?.value?.entries).toHaveLength(1)
+
+    bootRoute.handler({ method: 'HEAD', url: '/plugins/boot.json' } as IncomingMessage, response)
+    expect(status).toBe(200)
+
+    bootRoute.handler({ method: 'POST', url: '/plugins/boot.json' } as IncomingMessage, response)
+    expect(status).toBe(405)
+  })
+
 })
 
 describe('shared module declarations', () => {

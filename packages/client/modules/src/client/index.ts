@@ -19,6 +19,8 @@ import type {
 
 export { ClientModuleSystem }
 export { parseBootManifest, stripClientSuffix } from './manifest.ts'
+export { orderByModuleGraph } from './order.ts'
+export { isJsExpr, parseEntryList, type JsExpr } from './cordis-yaml.ts'
 export type {
   BootManifest, BootModuleRow, BootPluginRow, ClientBootstrapModule, ClientBundleRegistration,
   ClientModuleCreateOptions, ClientModuleLoader, ClientModuleLoaderTarget, ClientModuleRecord,
