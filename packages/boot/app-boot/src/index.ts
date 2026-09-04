@@ -53,6 +53,8 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+export { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+
 export {
   composeEntries,
   createRuntimeResolution,

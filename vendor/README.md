@@ -58,6 +58,8 @@ Keep this log exhaustive — every divergence from upstream must be listed.
 
 23. **`include/src/patch.ts` browser-safe patch module**: moved the `!!js` YAML dialect (`entryListSchema`), `PatchOptions`, and `applyEntryPatches` out of `index.ts` into a module that imports no `node:` builtin, published as the `./patch` export; `index.ts` re-exports all three, so the package surface is unchanged. It takes `isJsExpr` from the loader's `src/config/utils.ts` rather than the package barrel, because that barrel re-exports the Node module-loader compatibility layer. A browser applying the same bundle patch layers the host does cannot reach the algorithm through `index.ts`, whose Include class is file-backed by `node:fs/promises`. Behavior-preserving; the Node path still runs the same functions.
 
+24. **`loader/package.json` published expression evaluator**: the `./config/utils` export exposes the built `evaluate` / `interpolate` / `isJsExpr` module, which imports only `@deepseek-ai/cosmokit` and no `node:` builtin. An out-of-repo browser consumer needs the loader's own evaluator to resolve a `!!js` `disabled` expression the same way `Entry.disabledOf` does, and reaching it through the package barrel pulls the Node module-loader compatibility layer. In-repo callers keep importing `src/config/utils.ts`, because the tsconfig `paths` mapping carries no subpath wildcard and a built specifier would resolve a source-plane program to `lib/`. Additive: no existing specifier changes.
+
 ## Sync procedure
 
 To update a vendored package from upstream:
