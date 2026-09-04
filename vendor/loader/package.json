@@ -18,6 +18,10 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./config/utils": {
+      "types": "./lib/types/config/utils.d.ts",
+      "default": "./lib/types/config/utils.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
