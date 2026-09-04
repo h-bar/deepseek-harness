@@ -3044,6 +3044,42 @@ describe('Remote stream client carrier lifecycle', () => {
     })
   })
 
+  it('drives a supplied carrier, with no browser WebSocket or page origin present', async () => {
+    // The desktop app must control the request Origin, so its carrier is a
+    // native bridge rather than a page WebSocket. Nothing global is installed
+    // here: the factory is the only way this socket reaches the client.
+    const opened: FakeWebSocket[] = []
+    const client = new RemoteStreamMuxClient({
+      openSocket: () => {
+        const socket = new FakeWebSocket('bridge://carrier')
+        opened.push(socket)
+        return socket
+      },
+    })
+    client.start()
+    expect(opened).toHaveLength(1)
+
+    const stream = client.open('feed/follow', { label: 'injected' }, new AbortController().signal)
+      [Symbol.asyncIterator]()
+    const pending = stream.next()
+    const socket = opened[0]!
+    await vi.waitFor(() => { expect(socket.sent).toHaveLength(1) })
+    const frame = JSON.parse(socket.sent[0]!) as { type: string; endpoint: string; streamId: string }
+    expect(frame.type).toBe('open')
+    expect(frame.endpoint).toBe('feed/follow')
+
+    socket.receive({ type: 'item', streamId: frame.streamId, value: { seq: 1 } })
+    await expect(pending).resolves.toEqual({ done: false, value: { seq: 1 } })
+    socket.receive({ type: 'end', streamId: frame.streamId })
+    await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+
+    // A reconnect asks the factory again rather than reusing the dead carrier.
+    client.reconnect()
+    await vi.waitFor(() => { expect(opened).toHaveLength(2) })
+    expect(opened[1]).not.toBe(socket)
+    await client.close()
+  })
+
   it('coalesces repeated candidate replacements and drops one queued after close', async () => {
     await withFakeWebSocket('https://harness.example', async () => {
       FakeWebSocket.autoOpen = false
