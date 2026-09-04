@@ -27,6 +27,8 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+export { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+
 export {
   composeEntries,
   DEFAULT_PROFILE_BUNDLES,
