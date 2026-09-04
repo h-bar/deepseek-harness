@@ -18,11 +18,17 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./patch": {
+      "types": "./lib/types/patch.d.ts",
+      "default": "./lib/types/patch.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.js.map",
     "lib/types/**/*.d.ts",
     "lib/types/**/*.d.ts.map",
     "src"
