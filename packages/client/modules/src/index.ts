@@ -33,10 +33,12 @@ import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
-import { exactPackageSpecifier, parseDshClient, stripClientSuffix } from './client/manifest.ts'
+import { clientExportOf, exactPackageSpecifier, installModuleLoaderFacade, parseDshClient } from './client/manifest.ts'
+import { CLIENT_MODULES_ID, PARSER_PRELOAD_IDS, orderByModuleGraph } from './client/graph.ts'
 import type { WebBootBatch, WebBootBatchPhase, WebBootEntry, WebBootGraph } from './client/manifest.ts'
 
 export { stripClientSuffix } from './client/manifest.ts'
+export { orderByModuleGraph } from './client/graph.ts'
 export type {
   BootManifest, BootModuleRow, BootPluginRow, WebBootBatch, WebBootBatchPhase, WebBootEntry, WebBootGraph,
 } from './client/manifest.ts'
@@ -190,19 +192,6 @@ const SOURCE_MAP_TRAILER = /(?:\r?\n)?\/\/# sourceMappingURL=[^\r\n]*(?:\r?\n)?$
 const SOURCE_URL_TRAILER = /(?:\r?\n)?\/\/# sourceURL=([^\r\n]+)(?:\r?\n)?$/
 /** Published package-local client chunk names accepted by the on-demand route. */
 const CLIENT_CHUNK = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/
-
-/** Resolve `exports["./client"]` to a relative path, accepting the string and one-level conditional forms. */
-function clientExportOf(pkgName: string, exportsField: unknown): string | undefined {
-  if (typeof exportsField !== 'object' || exportsField === null) return undefined
-  const client = (exportsField as Record<string, unknown>)['./client']
-  if (client === undefined) return undefined
-  if (typeof client === 'string') return client
-  if (typeof client === 'object' && client !== null) {
-    const fallback = (client as Record<string, unknown>).default
-    if (typeof fallback === 'string') return fallback
-  }
-  throw new Error(`client-modules: ${pkgName} exports["./client"] must be a string or an object with a string default`)
-}
 
 /** sha1 metadata hash shortened to 12 hex chars. */
 function shortHash(input: string): string {
@@ -489,56 +478,6 @@ function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEnt
 }
 
 /**
- * Order composed rows so every requested dynamic package precedes its
- * consumers. An `external` specifier is either the package row it names
- * (`<pkg>/client` aliases the bare package) or a static-table name that adds no
- * graph edge.
- * @param entries - composed rows in scan order.
- * @returns the same rows reordered; scan order breaks every tie.
- * @throws {Error} when a row requests itself or when the module graph has a
- * cycle; the message lists the packages on it.
- */
-export function orderByModuleGraph(entries: readonly WebBootEntry[]): WebBootEntry[] {
-  const rowsById = new Map<string, WebBootEntry>()
-  for (const entry of entries) rowsById.set(entry.id, entry)
-  const ordered: WebBootEntry[] = []
-  const placed = new Set<string>()
-  const open: string[] = []
-  const visit = (entry: WebBootEntry): void => {
-    if (placed.has(entry.id)) return
-    const cycleStart = open.indexOf(entry.id)
-    if (cycleStart !== -1) {
-      throw new Error(
-        `client-modules: module graph cycle ${[...open.slice(cycleStart), entry.id].join(' -> ')} `
-        + '— a requested package row must precede its consumers, and factory-form CJS cannot deliver partial exports',
-      )
-    }
-    open.push(entry.id)
-    for (const name of entry.external ?? []) {
-      const dependency = rowsById.get(name) ?? rowsById.get(stripClientSuffix(name))
-      if (dependency === entry) {
-        throw new Error(
-          `client-modules: "${entry.id}" requests module "${name}" that it answers itself `
-          + '— a row must not declare its own package in dsh.client.external',
-        )
-      }
-      if (dependency !== undefined) visit(dependency)
-    }
-    open.pop()
-    placed.add(entry.id)
-    ordered.push(entry)
-  }
-  for (const entry of entries) visit(entry)
-  return ordered
-}
-
-/** Bootstrap package whose ordinary client bundle supplies the module-system implementation. */
-const CLIENT_MODULES_ID = '@deepseek-ai/dsh-client-modules'
-
-/** Dynamic bundles grouped into the parser bootstrap batch before the Vite shell. */
-const PARSER_PRELOAD_IDS = [CLIENT_MODULES_ID] as const
-
-/**
  * The boot protocol as index injection rows. The inline registration queue
  * precedes the application-batch preload and the blocking bootstrap batch. Its
  * `create()` method materializes the modules
@@ -550,29 +489,9 @@ const PARSER_PRELOAD_IDS = [CLIENT_MODULES_ID] as const
  * blocking bootstrap scripts, graph global.
  */
 export function bootInjections(graph: WebBootGraph): IndexInjection[] {
-  const bootstrapId = JSON.stringify(CLIENT_MODULES_ID)
-  const queue = `(()=>{
-const pendingQueue=[]
-window.__ModuleLoader__={
-  mode:"queue",
-  pendingQueue,
-  load(registration){pendingQueue.push(registration)},
-  create(options){
-    if(this.mode!=="queue")throw new Error("client-modules: window.__ModuleLoader__.create called after module-system boot")
-    const index=pendingQueue.findIndex(registration=>registration.id===${bootstrapId})
-    const registration=pendingQueue[index]
-    if(registration===undefined)throw new Error("client-modules: HTML did not preload ${CLIENT_MODULES_ID}/client.js")
-    pendingQueue.splice(index,1)
-    const exports=registration.factory(specifier=>{
-      throw new Error('client-modules: ${CLIENT_MODULES_ID}/client.js requested external "'+specifier+'" before the module system existed')
-    })
-    if(typeof exports!=="object"||exports===null||typeof exports.createClientModuleSystem!=="function"||typeof exports.apply!=="function"){
-      throw new Error("client-modules: ${CLIENT_MODULES_ID}/client.js did not export the bootstrap module face")
-    }
-    return exports.createClientModuleSystem(this,{id:registration.id,exports},options)
-  }
-}
-})()`
+  // Derived, not authored: one implementation serves this document and any
+  // consumer that imports the function directly.
+  const queue = `(${installModuleLoaderFacade.toString()})(window,${JSON.stringify(CLIENT_MODULES_ID)})`
   const bootstrap = graph.batches.filter(batch => batch.phase === 'bootstrap')
   const application = graph.batches.filter(batch => batch.phase === 'application')
   const rows: IndexInjection[] = [{ kind: 'script', placement: 'head', text: queue }]

@@ -26,7 +26,9 @@
  * This file is the browser-safe contract face (zero node imports): the
  * `__DSH_BOOT__` wire types, the boot-manifest parser, and the boundaries around
  * {@link ClientModuleSystem}. The package root is the host-side service that
- * composes the wire.
+ * composes the wire. It publishes as `./manifest` because `./client` resolves to
+ * the module-loader bundle, which only a browser can execute.
+ * @module @deepseek-ai/dsh-client-modules/manifest
  */
 
 import type {} from '@deepseek-ai/cordis'
@@ -205,6 +207,93 @@ export function exactPackageSpecifier(specifier: string): string | undefined {
  */
 export function stripClientSuffix(spec: string): string {
   return spec.endsWith('/client') ? spec.slice(0, -'/client'.length) : spec
+}
+
+/**
+ * Resolve `exports["./client"]` to a relative path, accepting the string and
+ * one-level conditional forms.
+ * @param pkgName - package whose exports these are, for diagnostics.
+ * @param exportsField - the raw package.json `exports` value.
+ * @returns the relative client bundle path, or undefined when the package declares none.
+ * @throws {Error} when `./client` is present but is neither form.
+ */
+export function clientExportOf(pkgName: string, exportsField: unknown): string | undefined {
+  if (typeof exportsField !== 'object' || exportsField === null) return undefined
+  const client = (exportsField as Record<string, unknown>)['./client']
+  if (client === undefined) return undefined
+  if (typeof client === 'string') return client
+  if (typeof client === 'object' && client !== null) {
+    const fallback = (client as Record<string, unknown>).default
+    if (typeof fallback === 'string') return fallback
+  }
+  throw new Error(`client-modules: ${pkgName} exports["./client"] must be a string or an object with a string default`)
+}
+
+/**
+ * Install the `window.__ModuleLoader__` queue facade on a page global. Bundles
+ * preloaded by the parser register their factories into the pending queue before
+ * the module system exists; the shell entry then calls `create()`, which
+ * materializes the modules bundle and hands this same facade to it in
+ * live-registration mode.
+ *
+ * The facade has to exist before the first bundle runs, so it cannot arrive as an
+ * import in the served document. {@link bootInjections} therefore inlines this
+ * function by stringifying it. **Keep the body self-contained**: a reference to
+ * an import or a module-scope binding compiles and passes unit tests, then throws
+ * a ReferenceError in the boot document, where no such binding exists. A consumer
+ * that composes the graph in-page — where a content-security policy may forbid
+ * both inline script and `eval` — imports and calls it directly instead.
+ * @param target - page global that receives the facade.
+ * @param bootstrapId - package id of the modules bundle `create()` materializes.
+ * @returns the installed facade, or the existing one when a boot document already installed it.
+ */
+export function installModuleLoaderFacade(target: DshWindow, bootstrapId: string): ClientModuleLoaderTarget {
+  const existing = target.__ModuleLoader__
+  if (existing !== undefined) return existing
+  const pendingQueue: ClientBundleRegistration[] = []
+  const facade: ClientModuleLoaderTarget = {
+    mode: 'queue',
+    pendingQueue,
+    load(registration) {
+      pendingQueue.push(registration)
+    },
+    create(options) {
+      if (facade.mode !== 'queue') {
+        throw new Error('client-modules: window.__ModuleLoader__.create called after module-system boot')
+      }
+      const index = pendingQueue.findIndex(registration => registration.id === bootstrapId)
+      const registration = pendingQueue[index]
+      if (registration === undefined) {
+        throw new Error(`client-modules: boot did not preload ${bootstrapId}/client.js`)
+      }
+      pendingQueue.splice(index, 1)
+      // A bundle body is code that arrived at runtime, so its return value is
+      // checked rather than trusted: the declared factory type describes what a
+      // well-formed bundle returns, not what an ill-formed one can.
+      const preBootRequire = (specifier: string): never => {
+        throw new Error(`client-modules: ${bootstrapId}/client.js requested external "${specifier}" before the module system existed`)
+      }
+      const loaded: unknown = registration.factory(Object.assign(preBootRequire, {
+        async: (specifier: string) => Promise.reject(new Error(
+          `client-modules: ${bootstrapId}/client.js requested chunk "${specifier}" before the module system existed`,
+        )),
+      }))
+      const malformed = `client-modules: ${bootstrapId}/client.js did not export the bootstrap module face`
+      if (typeof loaded !== 'object' || loaded === null) throw new Error(malformed)
+      const face = loaded as { createClientModuleSystem?: unknown; apply?: unknown }
+      if (typeof face.createClientModuleSystem !== 'function' || typeof face.apply !== 'function') {
+        throw new Error(malformed)
+      }
+      const createSystem = face.createClientModuleSystem as (
+        loaderTarget: ClientModuleLoaderTarget,
+        bootstrapModule: ClientBootstrapModule,
+        createOptions: ClientModuleCreateOptions,
+      ) => ClientModuleSystem
+      return createSystem(facade, { id: registration.id, exports: loaded as Record<string, unknown> }, options)
+    },
+  }
+  target.__ModuleLoader__ = facade
+  return facade
 }
 
 /**
