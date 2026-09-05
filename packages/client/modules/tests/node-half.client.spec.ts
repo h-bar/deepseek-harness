@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderIndexInjections, type WebServer, type WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import * as modulesClient from '../src/client/index.ts'
 import { ClientModuleRegistry, bootInjections, orderByModuleGraph } from '../src/index.ts'
+import { installModuleLoaderFacade } from '../src/client/manifest.ts'
 import type { ClientModuleLoaderTarget, WebBootEntry, WebBootGraph } from '../src/client/index.ts'
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
@@ -208,8 +209,21 @@ describe('HTML bootstrap facade', () => {
   it('rejects a page that did not preload the modules bundle', () => {
     const graph = bootGraph()
     const { target } = injectedFacade(graph)
+    // "boot", not "HTML": the same facade serves a consumer that installs it by
+    // import, where a content-security policy forbids an injected inline script.
     expect(() => target.create({ boot: graph, staticModules: {} }))
-      .toThrow(`HTML did not preload ${MODULES_ID}/client.js`)
+      .toThrow(`boot did not preload ${MODULES_ID}/client.js`)
+  })
+
+  it('returns the already-installed facade instead of replacing it', () => {
+    // A consumer that installs the facade by import rather than through an
+    // injected script must not discard registrations an earlier call queued.
+    const graph = bootGraph()
+    const { target } = injectedFacade(graph)
+    const registration = { id: MODULES_ID, factory: () => ({}) }
+    target.load(registration)
+    expect(installModuleLoaderFacade({ __ModuleLoader__: target }, MODULES_ID)).toBe(target)
+    expect(target.pendingQueue).toEqual([registration])
   })
 
   it('rejects a bootstrap bundle with a runtime external', () => {
