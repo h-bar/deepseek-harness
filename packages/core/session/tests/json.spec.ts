@@ -247,3 +247,37 @@ describe('isJsonValue', () => {
     expect(isJsonValue(cyclic)).toBe(false)
   })
 })
+
+describe('lossless JSON across engines', () => {
+  // ECMA-262 leaves the whitespace of the `NativeFunction` source unspecified:
+  // V8 emits it on one line, JavaScriptCore breaks and indents the body. This
+  // stands in for the WebKit spelling, where matching one engine's exact string
+  // refused every plain object, and so every Session event carrying one.
+  function withWebKitNativeSource<T>(run: () => T): T {
+    // The original stays unbound: the replacement calls it with each receiver's own
+    // `this`, and binding it here would report one fixed function's source instead.
+    // oxlint-disable-next-line typescript/unbound-method
+    const original = Function.prototype.toString
+    Function.prototype.toString = function (this: unknown): string {
+      return original.call(this).replace('() { [native code] }', '() {\n    [native code]\n}')
+    }
+    try {
+      return run()
+    } finally {
+      Function.prototype.toString = original
+    }
+  }
+
+  it('accepts plain values whatever the engine spells a native function', () => {
+    expect(withWebKitNativeSource(() => isJsonValue({ type: 'chunk', index: 0 }))).toBe(true)
+    expect(withWebKitNativeSource(() => isJsonValue([1, 'two', null]))).toBe(true)
+    expect(withWebKitNativeSource(() => snapshotJsonValue({ a: [1] }))).toEqual({ a: [1] })
+  })
+
+  it('still refuses what a JSON round trip would lose', () => {
+    expect(withWebKitNativeSource(() => isJsonValue({ at: new Date() }))).toBe(false)
+    expect(withWebKitNativeSource(() => isJsonValue({ n: Number.NaN }))).toBe(false)
+    expect(withWebKitNativeSource(() => isJsonValue({ z: -0 }))).toBe(false)
+    expect(withWebKitNativeSource(() => isJsonValue(objectWithForgedIntrinsicPrototype()))).toBe(false)
+  })
+})
