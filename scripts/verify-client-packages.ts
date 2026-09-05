@@ -13,7 +13,7 @@ const CLIENT_MANIFEST_GLOB = 'packages/client/*/package.json'
 const MANIFEST_GLOBS = ['packages/*/*/package.json', 'apps/*/package.json', 'vendor/*/package.json']
 const CONFIG_GLOB = 'packages/*/*/tsdown.config.ts'
 const PLATFORM_SOURCE = 'packages/client/web/src/platform.ts'
-const PARSER_PRELOAD_SOURCE = 'packages/client/modules/src/index.ts'
+const PARSER_PRELOAD_SOURCE = 'packages/client/modules/src/client/graph.ts'
 const STATIC_PRESET_SOURCE = 'packages/client/tsdown.client.ts'
 const CORDIS = '@deepseek-ai/cordis'
 

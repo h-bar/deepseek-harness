@@ -82,7 +82,8 @@ bundle 路由随注入的 `webServer` 生命周期注册：服务就绪时注册
 | [`src/index.ts`](src/index.ts) | Node 半侧：`ClientModuleRegistry`、扫描、产物快照、可选 combo 路由、结构化 index 行 |
 | [`src/client/index.ts`](src/client/index.ts) | 浏览器半侧：bootstrap 导出、`ctx.modules` 登记 |
 | [`src/client/system.ts`](src/client/system.ts) | `ClientModuleSystem`：加载／物化／失效机制 |
-| [`src/client/manifest.ts`](src/client/manifest.ts) | 协议类型、启动清单解析与 `dsh.client` 声明解析器 |
+| [`src/client/manifest.ts`](src/client/manifest.ts) | 协议类型、启动清单解析与 `dsh.client` 声明解析器（`./manifest` 导出） |
+| [`src/client/graph.ts`](src/client/graph.ts) | 浏览器安全的 bootstrap 协议 id 与模块图排序（`./graph` 导出） |
 
 </details>
 

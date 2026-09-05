@@ -82,7 +82,8 @@ The host contributes structured index rows that inject, into `<head>`: the `wind
 | [`src/index.ts`](src/index.ts) | Node half: `ClientModuleRegistry`, scan, artifact snapshots, optional combo route, structured index rows |
 | [`src/client/index.ts`](src/client/index.ts) | Browser half: bootstrap export, `ctx.modules` enrollment |
 | [`src/client/system.ts`](src/client/system.ts) | `ClientModuleSystem`: load/materialize/invalidate machinery |
-| [`src/client/manifest.ts`](src/client/manifest.ts) | Wire types, boot-manifest parsing, and the `dsh.client` declaration parser |
+| [`src/client/manifest.ts`](src/client/manifest.ts) | Wire types, boot-manifest parsing, and the `dsh.client` declaration parser (the `./manifest` export) |
+| [`src/client/graph.ts`](src/client/graph.ts) | Browser-safe bootstrap protocol ids and module-graph ordering (the `./graph` export) |
 
 </details>
 
