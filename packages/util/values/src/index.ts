@@ -15,6 +15,15 @@ export function assertNever(value: never, context?: string): never {
 }
 
 /** Whether a realm-owned intrinsic prototype is backed by its native constructor. */
+/**
+ * The `NativeFunction` production ECMA-262 defines for a built-in's source
+ * text. Its whitespace is not fixed: V8 emits `function Object() { [native
+ * code] }` on one line, JavaScriptCore breaks and indents the body. Matching
+ * one engine's spelling made every plain object fail this test on the other,
+ * so `snapshotJsonValue` refused every value in a WebKit view.
+ */
+const NATIVE_FUNCTION_SOURCE = /^function\s*[A-Za-z$_][\w$]*\s*\(\s*\)\s*\{\s*\[native code\]\s*\}$/
+
 function hasIntrinsicConstructor(prototype: object, name: 'Array' | 'Object'): boolean {
   const descriptor = Object.getOwnPropertyDescriptor(prototype, 'constructor')
   const constructor: unknown = descriptor?.value
@@ -22,7 +31,7 @@ function hasIntrinsicConstructor(prototype: object, name: 'Array' | 'Object'): b
   try {
     return constructor.name === name
       && constructor.prototype === prototype
-      && Function.prototype.toString.call(constructor) === `function ${name}() { [native code] }`
+      && NATIVE_FUNCTION_SOURCE.test(Function.prototype.toString.call(constructor))
   } catch {
     return false
   }
