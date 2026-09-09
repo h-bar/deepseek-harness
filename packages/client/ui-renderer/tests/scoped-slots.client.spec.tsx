@@ -22,6 +22,9 @@ import type {
   StandardSourceBinding, StoreInstanceLike,
 } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createSlotRenderer } from '../src/client/scoped-slots.tsx'
+import {
+  keyedObservableHook, maybeObservableHook, useHost, useRootBinding, useScopeBinding,
+} from '../src/client/bindings.tsx'
 
 type AnyProps = Record<string, unknown>
 type RenderSlotFn = (key: string, owner: object, opts?: RenderOpts) => ReactNode
@@ -120,7 +123,7 @@ function makeHost() {
       : <>{children}</>,
   }
   const scopeRevision = observable(0)
-  let activeScopeAdapter = sessionAdapter
+  let activeScopeAdapter: SlotScopeAdapter | undefined = sessionAdapter
 
   const bump = (key: string) => {
     versions.set(key, (versions.get(key) ?? 0) + 1)
@@ -232,7 +235,7 @@ function makeHost() {
       if (source === undefined) throw new Error(`unknown test session: ${id}`)
       source.set(snapshot)
     },
-    replaceScope: (adapter: SlotScopeAdapter) => {
+    replaceScope: (adapter: SlotScopeAdapter | undefined) => {
       activeScopeAdapter = adapter
       scopeRevision.set(scopeRevision.getSnapshot() + 1)
     },
@@ -1146,5 +1149,76 @@ describe('session-maybe adoption identity', () => {
       })
     })
     expect(view.container.textContent).toBe('replacement#1')
+  })
+
+  it('paints with no scope adapter installed and rebinds when one arrives', () => {
+    const h = makeHost()
+    h.replaceScope(undefined)
+    const { view } = mountMaybeCounter(h)
+    // No session domain in the composition at all: the root paints and the
+    // maybe child binds absent, exactly like an adapter reporting no selection.
+    expect(view.container.textContent).toBe('blank#1')
+    const binding: ScopedStandardSourceBinding = {
+      key: 's1',
+      ctx: new Context(),
+      hooks: { session: observable({ sid: 's1' }) },
+      keyedHooks: {},
+      props: { sessionId: 's1' },
+    }
+    act(() => {
+      h.replaceScope({
+        current: observable(binding),
+        resolve: key => key === binding.key ? binding : undefined,
+      })
+    })
+    // Adapter installation bumps scopeRevision; the mounted tree rebinds and
+    // the blank incarnation adopts the selection without a remount.
+    expect(view.container.textContent).toBe('s1#1')
+  })
+})
+
+describe('binding seams outside their providers and absent sources', () => {
+  it('throws for machinery rendered outside its provider', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const HostProbe = () => <>{void useHost()}</>
+    const RootProbe = () => <>{void useRootBinding()}</>
+    const ScopeProbe = () => <>{void useScopeBinding()}</>
+    expect(() => render(<HostProbe />)).toThrow(/outside the installed renderer tree/)
+    expect(() => render(<RootProbe />)).toThrow(/outside the root standard-source provider/)
+    expect(() => render(<ScopeProbe />)).toThrow(/outside its scope provider/)
+    spy.mockRestore()
+  })
+
+  it('binds an absent optional source as an undefined-returning selector hook', () => {
+    const seen: unknown[] = []
+    const Probe = () => {
+      const useValue = maybeObservableHook<number>(undefined)
+      seen.push(useValue(value => value))
+      return null
+    }
+    const view = render(<Probe />)
+    expect(seen).toEqual([undefined])
+    view.unmount()
+  })
+
+  it('binds keyed families: resolved keys, unknown keys, and a missing resolver', () => {
+    const known = observable<unknown>('resolved')
+    const family = (key: string) => key === 'known' ? known : undefined
+    const seen: unknown[] = []
+    const Probe = () => {
+      const useKeyed = keyedObservableHook(family)
+      // Cached per source: rebinding the same family reuses the hook identity.
+      expect(keyedObservableHook(family)).toBe(useKeyed)
+      const useAbsent = keyedObservableHook(undefined)
+      seen.push(
+        useKeyed('known'),
+        useKeyed('unknown', value => value),
+        useAbsent('any'),
+        useAbsent('any', () => 'mapped'),
+      )
+      return null
+    }
+    render(<Probe />)
+    expect(seen).toEqual(['resolved', undefined, undefined, 'mapped'])
   })
 })
