@@ -1314,7 +1314,7 @@ export function createSlotRenderer(): SlotRenderer {
       return (
         <HostContext.Provider value={host}>
           <RootStandardProvider>
-            <ScopeProvider scope="session-maybe">
+            <ScopeProvider>
               <RootOutlet ownerProps={ownerProps} />
             </ScopeProvider>
           </RootStandardProvider>

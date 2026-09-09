@@ -82,6 +82,24 @@ const absentSource: HostObservable<undefined> = {
 }
 
 /**
+ * Binding an optional scope presents when no package installs an adapter for
+ * it at all — as opposed to an installed adapter reporting no selection.
+ * Member names stay present so Hook call order is identical either way.
+ */
+const unscopedBinding: StandardSourceBinding = {
+  key: undefined,
+  hooks: {},
+  keyedHooks: {},
+  props: {},
+}
+
+/** Constant source for {@link unscopedBinding}, so its Hook identity is stable. */
+const unscopedSource: HostObservable<StandardSourceBinding> = {
+  getSnapshot: () => unscopedBinding,
+  subscribe: () => () => {},
+}
+
+/**
  * Bind an optional source without changing Hook call order.
  * @param source - current source, or absence.
  * @returns selector Hook returning `undefined` while absent.
@@ -157,17 +175,13 @@ export function RootStandardProvider({ children }: { children: ReactNode }) {
 }
 
 /** Subscribe to the scope roster before resolving and binding its current adapter. */
-export function ScopeProvider({
-  scope,
-  children,
-}: {
-  scope: 'session' | 'session-maybe'
-  children: ReactNode
-}) {
+export function ScopeProvider({ children }: { children: ReactNode }) {
   const host = useHost()
   observableHook(host.scopeRevision)(value => value)
-  const adapter = host.scope(scope)
-  if (adapter === undefined) throw new SlotAssemblyError(`scope '${scope}' rendered without an installed adapter`)
-  const binding = observableHook(adapter.current)(value => value)
+  const adapter = host.scope('session-maybe')
+  // A composition may mount no session domain at all; that binds absent, like
+  // an installed adapter reporting no selection. Hook calls stay unconditional
+  // so a later adapter install re-renders in the same order.
+  const binding = observableHook(adapter?.current ?? unscopedSource)(value => value)
   return <ScopeBindingContext.Provider value={binding}>{children}</ScopeBindingContext.Provider>
 }
