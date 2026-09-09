@@ -72,8 +72,8 @@ export type { OpenContentIntent } from './stores.ts'
 /** This package's copy namespace. */
 const NS = 'sidebarRight'
 
-/** Required browser services: the slot registry, the frame's panel actions, copy, and the resource model. */
-export const inject = ['slots', 'layout', 'locale', 'resources']
+/** Required browser services: the slot registry, the frame's panel actions, copy, the resource model, and the session scope adapter. */
+export const inject = ['slots', 'layout', 'locale', 'resources', 'uiSession']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
