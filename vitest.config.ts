@@ -227,7 +227,9 @@ export default defineConfig({
         'packages/client/ui-workspace/src/client/WorkspaceBrowser.tsx',
         'packages/client/ui-workspace/src/client/WorkspacePicker.tsx',
         'packages/client/ui-workspace/src/client/rows/WorkspaceBrowser.tsx',
-        'packages/client/ui-renderer/src/client/*',
+        // The renderer's React binding seams are jsdom-coverable and gated
+        // (bindings.tsx); the outlet machinery keeps the GUI debt exemption.
+        'packages/client/ui-renderer/src/client/!(bindings).{ts,tsx}',
         // Session object internals retain the runtime GUI debt exemption; the
         // assistant-stream reconciler, Controller entry, transport, Agent scope,
         // and adapters stay gated.
