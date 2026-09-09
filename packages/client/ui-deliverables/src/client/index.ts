@@ -39,8 +39,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-/** Required services for the tail-slot and tab-type registrations and their dictionaries. */
-export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.session', 'sidebarRightTabs', 'sidebarRight', 'configForms']
+/** Required services for the tail-slot and tab-type registrations, their dictionaries, and the session scope adapter. */
+export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.session', 'sidebarRightTabs', 'sidebarRight', 'configForms', 'uiSession']
 
 /**
  * Client plugin body: register the dictionaries, the turn-tail entry, and the comparison tab type.

@@ -19,8 +19,8 @@ import { detailsToolview } from './tool/toolviews/details-row.tsx'
 import { todoToolview } from './tool/toolviews/todo-row.tsx'
 import { webToolview } from './tool/toolviews/web-row.tsx'
 
-/** Required services: the slot registry and the Remote face carrying the Host home used for POSIX `~`. */
-export const inject = ['slots', 'remote']
+/** Required services: the slot registry, the Remote face carrying the Host home used for POSIX `~`, and the session scope adapter. */
+export const inject = ['slots', 'remote', 'uiSession']
 
 /**
  * Mount the whole-Tool renderers and built-in atomic Tool registrations.

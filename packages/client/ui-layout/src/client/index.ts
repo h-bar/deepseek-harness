@@ -133,7 +133,7 @@ export interface RightbarOwnerProps {
 }
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
-export const inject = ['slots', 'theme', 'locale']
+export const inject = ['slots', 'theme', 'locale', 'uiSession']
 
 /**
  * Client plugin body: provide ctx.layout, then one register() call — AppFrame
