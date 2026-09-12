@@ -83,6 +83,8 @@ The package has two halves. The Host half ([`src/index.ts`](src/index.ts)) regis
 
 Both entry paths issue a `HEAD` preflight to the document-relative `api/session.export?...`, then hand the GET route to the browser download manager without buffering the ZIP in JavaScript. One controller owns one in-flight download per session, collapses concurrent gestures into that operation, and cancels the preflight on plugin disposal. Modal state lives in a snapshot store keyed by session, so the button and the command share one dialog per session.
 
+Saving is delegated to [`ctx.fileDownload`](../../client/file-download/README.md), which owns the local destination. When that service reports `shellOwned`, the controller skips the preflight: the page performs neither the transfer nor the credential exchange, so a page-origin request about the same path proves nothing and the carrier reports its own failures. A `'cancelled'` outcome drops the session's dialog entry, so a dismissed save dialog closes the modal without announcing success or failure.
+
 The Host route is a feature-owned exact Fetch contribution. Connection applies its Host/Origin and browser-session checks and bridges the streaming `Response`; this package owns query validation, live-session flushes, handle-based log reads and attachment reads, ZIP generation, and HTTP status semantics.
 
 </details>
@@ -95,6 +97,7 @@ The Host route is a feature-owned exact Fetch contribution. Connection applies i
 Read these pages when the package-level contract is not enough. They move from the Web control to the host endpoint and the surrounding command and session surfaces.
 
 - [dsh-client-connection](../../client/connection/README.md) — the authenticated Fetch-route carrier used by the Host endpoint.
+- [dsh-client-file-download](../../client/file-download/README.md) — the service that saves the archive to the user's machine.
 - [Commands subsystem reference](../../../docs/subsystems/commands.md) — the human-command registry the `/export` command registers on.
 - [dsh-client-ui-commands](../../client/ui-commands/README.md) — the browser command surface that renders and acknowledges `/export`.
 - [Session Query package map](../README.md) — the retrieval family this package belongs to.
@@ -125,7 +128,7 @@ None. The log-only command lifecycle and browser download do not change the deri
 
 These limits define when this package is a poor fit or needs special operational care. They are current package constraints, not a task backlog.
 
-- **Browser download, not a Host-path writer** — the browser chooses the local destination; no Host path or native folder action is returned.
+- **Browser download, not a Host-path writer** — the destination belongs to `ctx.fileDownload`'s carrier, so no Host path or native folder action is returned. This package learns only whether the save was taken or cancelled.
 - **Preflight reports only pre-stream failures** — a descendant or attachment failure after the browser accepts the GET is reported by the browser download manager, not by the dialog.
 
 <a id="dev-note"></a>
@@ -138,7 +141,7 @@ This Dev Note is working context for maintainers: open design questions and dire
 
 #### Future: export destinations beyond the browser
 
-The download is deliberately browser-scoped; a Host-path or native folder export would need a new endpoint contract and a decision on where the ZIP lands.
+Choosing a destination now belongs to `dsh-client-file-download`. A Host-path or native folder export driven from the served web app would still need a new endpoint contract and a decision on where the ZIP lands.
 
 </details>
 

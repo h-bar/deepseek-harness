@@ -12,7 +12,8 @@ const SID = 'session-export-dialog' as SessionId
 
 function bench(
   controller = new SessionLogDownloadController(
-    async () => new Response('zip', { status: 200 }), vi.fn(),
+    { shellOwned: false, save: async () => 'saved' as const },
+    async () => new Response('zip', { status: 200 }),
   ),
 ) {
   const dismiss = vi.fn((sessionId: SessionId) => { controller.dismiss(sessionId) })
@@ -49,7 +50,7 @@ describe('SessionLogDownloadDialog', () => {
   it('renders the in-flight state and the settled browser download state', async () => {
     let release!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { release = resolve })
-    const controller = new SessionLogDownloadController(() => pending, vi.fn())
+    const controller = new SessionLogDownloadController({ shellOwned: false, save: async () => 'saved' as const }, () => pending)
     const b = bench(controller)
 
     const download = controller.download(SID)

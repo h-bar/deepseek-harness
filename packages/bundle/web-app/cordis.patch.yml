@@ -208,6 +208,11 @@
     - id: file-upload
       name: '@deepseek-ai/dsh-client-file-upload'
 
+    # Saving a Host file locally. The served browser uses its download manager;
+    # an embedding shell installs its own save carrier before boot.
+    - id: file-download
+      name: '@deepseek-ai/dsh-client-file-download'
+
     - id: api-remotes
       name: '@deepseek-ai/dsh-api-remotes'
 

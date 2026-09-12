@@ -83,6 +83,8 @@ Web bundle 将本包与 Connection、`dsh-commands`、`dsh-client-ui-commands` �
 
 两条入口都会先向文档相对的 `api/session.export?...` 发出 `HEAD` 预检请求，然后把 GET 路由交给浏览器下载管理器，JavaScript 不缓冲 ZIP。一个控制器按会话持有一项进行中的下载，把并发操作折叠进该任务，并在插件释放时取消预检。弹窗状态存放在按会话键控的快照存储中，因此按钮与命令按会话共享一个弹窗。
 
+保存被委托给 [`ctx.fileDownload`](../../client/file-download/README.zh.md)，由它拥有本地目标位置。当该服务报告 `shellOwned` 时，控制器跳过预检：页面既不执行传输也不执行凭据交换，因此针对同一路径的页面源请求毫无意义，且载体会报告自身失败。`'cancelled'` 结果会丢弃该会话的弹窗条目，因此被关闭的保存对话框会关闭弹窗，且不宣告成功或失败。
+
 Host 路由是由该功能拥有的精确 Fetch 路由贡献。Connection 应用 Host/Origin 与浏览器会话检查并桥接流式 `Response`；本包拥有查询校验、活动会话 flush、基于句柄的日志读取与附件读取、ZIP 生成和 HTTP 状态语义。
 
 </details>
@@ -95,6 +97,7 @@ Host 路由是由该功能拥有的精确 Fetch 路由贡献。Connection 应用
 当包级约定不够用时阅读以下页面。它们从 Web 控件逐步进入 Host 端点及相关的命令与会话接口。
 
 - [dsh-client-connection](../../client/connection/README.zh.md)——Host 端点使用的认证 Fetch 路由载体。
+- [dsh-client-file-download](../../client/file-download/README.zh.md)——把归档保存到用户机器的服务。
 - [命令子系统参考](../../../docs/subsystems/commands.zh.md)——`/export` 命令注册的用户命令注册表。
 - [dsh-client-ui-commands](../../client/ui-commands/README.zh.md)——渲染并确认 `/export` 的浏览器命令界面。
 - [会话查询包映射](../README.zh.md)——本包所属的检索包族。
@@ -125,7 +128,7 @@ Host 路由是由该功能拥有的精确 Fetch 路由贡献。Connection 应用
 
 这些限制说明本包何时不合适，或何时需要特别的运维注意。它们是当前包约束，不是任务积压。
 
-- **浏览器下载，而非 Host 路径写入**——目标位置由浏览器选择；不会返回 Host 路径或原生文件夹操作。
+- **浏览器下载，而非 Host 路径写入**——目标位置属于 `ctx.fileDownload` 的载体，因此不会返回 Host 路径或原生文件夹操作。本包只知道保存被接受还是被取消。
 - **预检只报告流式传输前的失败**——浏览器接受 GET 后发生的子会话或附件读取失败由浏览器下载管理器报告，不通过弹窗报告。
 
 <a id="dev-note"></a>
@@ -138,7 +141,7 @@ Host 路由是由该功能拥有的精确 Fetch 路由贡献。Connection 应用
 
 #### 未来：浏览器之外的导出目标
 
-下载刻意限定在浏览器范围；Host 路径或原生文件夹导出需要新的端点约定，并决定 ZIP 的落盘位置。
+选择目标位置现在属于 `dsh-client-file-download`。由所服务的 web app 驱动的 Host 路径或原生文件夹导出仍需要新的端点约定，并决定 ZIP 的落盘位置。
 
 </details>
 
