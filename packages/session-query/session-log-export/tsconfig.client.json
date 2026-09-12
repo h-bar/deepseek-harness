@@ -15,6 +15,7 @@
   ],
   "references": [
     { "path": "../../../vendor/cordis" },
+    { "path": "../../client/file-download" },
     { "path": "../../client/locale" },
     { "path": "../../client/store" },
     { "path": "../../client/ui-commands" },

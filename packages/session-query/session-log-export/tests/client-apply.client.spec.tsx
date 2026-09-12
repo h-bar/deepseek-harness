@@ -21,12 +21,17 @@ function declare(slots: SlotRegistry): () => void {
   } as never, () => null)
 }
 
-async function bench() {
+type Save = (request: { path: string; suggestedFilename: string }) => Promise<'saved' | 'cancelled'>
+
+async function bench(shell?: Save) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const slots = ctx.get('slots') as SlotRegistry
   const declaration = declare(slots)
   ctx.provide('locale', new LocaleRuntime(ctx))
+  ctx.provide('fileDownload', shell === undefined
+    ? { shellOwned: false, save: async () => 'saved' as const }
+    : { shellOwned: true, save: shell })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   return { ctx, slots, declaration, fiber }
@@ -36,7 +41,7 @@ describe('session-log-download browser plugin', () => {
   it('provides one controller and removes its Header contribution on disposal', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 500 })))
     const b = await bench()
-    expect(inject).toEqual(['slots', 'locale'])
+    expect(inject).toEqual(['slots', 'locale', 'fileDownload'])
     expect(b.ctx.sessionLogDownload).toBeDefined()
     expect(b.slots.entries('conversation.session.header.actions')).toHaveLength(0)
     const entry = b.slots.entries('conversation.session.header.utilities')[0]
@@ -71,6 +76,23 @@ describe('session-log-download browser plugin', () => {
 
     await first.fiber.dispose()
     await second.fiber.dispose()
+  })
+
+  it('routes the download through the saver ctx.fileDownload supplies', async () => {
+    const fetcher = vi.fn(async () => new Response('', { status: 500 }))
+    vi.stubGlobal('fetch', fetcher)
+    const save = vi.fn(async () => 'saved' as const)
+    const b = await bench(save)
+
+    await b.ctx.sessionLogDownload.download(SID)
+
+    expect(save).toHaveBeenCalledWith({
+      path: `/api/session.export?sessionId=${SID}&includeDescendants=true`,
+      suggestedFilename: 'dsh-session-session-export-apply.zip',
+    })
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(b.ctx.sessionLogDownload.store.getSnapshot().bySession[SID]?.status).toBe('success')
+    await b.fiber.dispose()
   })
 
   it('re-registers after the declaring Header slot collapses and returns', async () => {
