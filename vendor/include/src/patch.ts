@@ -8,7 +8,7 @@
  */
 // The loader's barrel pulls its Node module-loader compatibility layer, and an
 // installed node_modules requires the published subpath, not `src/*.ts` — see
-// vendor/README.md, local modification 22.
+// vendor/README.md, local modification 25.
 import { isJsExpr } from '@deepseek-ai/cordis-plugin-loader/config/utils'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
