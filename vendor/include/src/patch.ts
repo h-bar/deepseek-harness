@@ -6,9 +6,10 @@
  * what lets a browser apply the same bundle patch layers the host does.
  * @module @deepseek-ai/cordis-plugin-include/patch
  */
-// The loader's barrel re-exports its Node module-loader compatibility layer, so
-// it is imported here by the browser-safe module that owns the predicate.
-import { isJsExpr } from '@deepseek-ai/cordis-plugin-loader/src/config/utils.ts'
+// The loader's barrel pulls its Node module-loader compatibility layer, and an
+// installed node_modules requires the published subpath, not `src/*.ts` — see
+// vendor/README.md, local modification 22.
+import { isJsExpr } from '@deepseek-ai/cordis-plugin-loader/config/utils'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
 

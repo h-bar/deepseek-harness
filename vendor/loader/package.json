@@ -27,6 +27,8 @@
   },
   "files": [
     "lib/index.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.js.map",
     "lib/types/**/*.d.ts",
     "lib/types/**/*.d.ts.map",
     "src"
