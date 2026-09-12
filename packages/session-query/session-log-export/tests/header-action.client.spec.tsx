@@ -20,7 +20,10 @@ function bindSessionExport(controller: SessionLogDownloadController) {
 }
 
 function bench() {
-  const controller = new SessionLogDownloadController(async () => new Response('zip'), vi.fn())
+  const controller = new SessionLogDownloadController(
+    { shellOwned: false, save: async () => 'saved' as const },
+    async () => new Response('zip'),
+  )
   const request = vi.fn((sessionId: SessionId) => controller.download(sessionId))
   const dismiss = vi.fn((sessionId: SessionId) => { controller.dismiss(sessionId) })
   const useSessionLogDownload = bindSessionExport(controller)
@@ -64,7 +67,7 @@ describe('Session export Header action', () => {
     const b = bench()
     let release!: (response: Response) => void
     const pending = new Promise<Response>((resolve) => { release = resolve })
-    const controller = new SessionLogDownloadController(() => pending, vi.fn())
+    const controller = new SessionLogDownloadController({ shellOwned: false, save: async () => 'saved' as const }, () => pending)
     const useSessionLogDownload = bindSessionExport(controller)
     b.view.rerender(<SessionLogDownloadHeaderAction {...({
       sessionId: SID,

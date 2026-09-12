@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import {
-  downloadUrl, SessionLogDownloadController, sessionLogZipFilename,
-} from '../src/client/controller.ts'
+import { SessionLogDownloadController, sessionLogZipFilename } from '../src/client/controller.ts'
+
+/** Page-owned save: the served browser's carrier. */
+function pageDownloads(save = vi.fn(async () => 'saved' as const)) {
+  return { shellOwned: false, save }
+}
+
+/** Shell-owned save: an embedding shell's carrier. */
+function shellDownloads(save: () => Promise<'saved' | 'cancelled'>) {
+  return { shellOwned: true, save: vi.fn(save) }
+}
 
 const SID = 'session-export-controller' as SessionId
 
@@ -16,7 +24,7 @@ describe('SessionLogDownloadController', () => {
   it('downloads the host ZIP and publishes one shared success state', async () => {
     const fetcher = vi.fn(async () => new Response('zip', { status: 200 }))
     const save = vi.fn()
-    const controller = new SessionLogDownloadController(fetcher, save)
+    const controller = new SessionLogDownloadController(pageDownloads(save), fetcher)
 
     await controller.download(SID)
 
@@ -27,10 +35,10 @@ describe('SessionLogDownloadController', () => {
     expect(url.searchParams.get('includeDescendants')).toBe('true')
     expect(init.method).toBe('HEAD')
     expect(init.signal).toBeInstanceOf(AbortSignal)
-    expect(save).toHaveBeenCalledWith(
-      url.toString(),
-      'dsh-session-session-export-controller.zip',
-    )
+    expect(save).toHaveBeenCalledWith({
+      path: `${url.pathname}${url.search}`,
+      suggestedFilename: 'dsh-session-session-export-controller.zip',
+    })
     expect(controller.store.getSnapshot().bySession[SID]).toEqual({
       open: true, status: 'success', error: null,
     })
@@ -39,7 +47,7 @@ describe('SessionLogDownloadController', () => {
   it('collapses concurrent gestures and preserves a dismissed dialog', async () => {
     const response = Promise.withResolvers<Response>()
     const fetcher = vi.fn(() => response.promise)
-    const controller = new SessionLogDownloadController(fetcher, vi.fn())
+    const controller = new SessionLogDownloadController(pageDownloads(), fetcher)
 
     const first = controller.download(SID)
     const second = controller.download(SID)
@@ -55,7 +63,7 @@ describe('SessionLogDownloadController', () => {
 
   it('publishes HTTP and transport failures without leaking rejections', async () => {
     const http = new SessionLogDownloadController(
-      async () => new Response('backend unavailable', { status: 500 }), vi.fn(),
+      pageDownloads(), async () => new Response('backend unavailable', { status: 500 }),
     )
     await http.download(SID)
     expect(http.store.getSnapshot().bySession[SID]).toEqual({
@@ -64,17 +72,17 @@ describe('SessionLogDownloadController', () => {
       error: 'Export failed: HTTP 500 backend unavailable',
     })
 
-    const transport = new SessionLogDownloadController(async () => { throw 'offline' }, vi.fn())
+    const transport = new SessionLogDownloadController(pageDownloads(), async () => { throw 'offline' })
     await transport.download(SID)
     expect(transport.store.getSnapshot().bySession[SID]?.error).toBe('offline')
 
     transport.dismiss('absent' as SessionId)
 
     const emptyDetail = new SessionLogDownloadController(
+      pageDownloads(),
       async () => ({
         ok: false, status: 503, text: async () => { throw new Error('body unavailable') },
       }) as unknown as Response,
-      vi.fn(),
     )
     await emptyDetail.download(SID)
     expect(emptyDetail.store.getSnapshot().bySession[SID]?.error).toBe('Export failed: HTTP 503')
@@ -88,7 +96,7 @@ describe('SessionLogDownloadController', () => {
         reject(signal?.reason instanceof Error ? signal.reason : new Error('aborted'))
       }, { once: true })
     }))
-    const controller = new SessionLogDownloadController(fetcher, vi.fn())
+    const controller = new SessionLogDownloadController(pageDownloads(), fetcher)
     const pending = controller.download(SID)
 
     await controller.dispose()
@@ -99,23 +107,58 @@ describe('SessionLogDownloadController', () => {
     await controller.dispose()
   })
 
-  it('uses the null-origin fallback and default browser operations', async () => {
+  it('probes the null-origin stand-in through the default page fetch', async () => {
     vi.stubGlobal('location', { origin: 'null' })
     const fetcher = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response('zip'))
     vi.stubGlobal('fetch', fetcher)
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    const controller = new SessionLogDownloadController()
+    const controller = new SessionLogDownloadController(pageDownloads())
 
     await controller.download(SID)
 
     expect((fetcher.mock.calls[0]?.[0] as URL).origin).toBe('http://dsh.internal')
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: 'HEAD' })
-    expect(click).toHaveBeenCalledOnce()
+  })
+
+  it('lets a shell-owned carrier skip the page preflight', async () => {
+    const fetcher = vi.fn(async () => new Response('zip', { status: 200 }))
+    const downloads = shellDownloads(async () => 'saved')
+    const controller = new SessionLogDownloadController(downloads, fetcher)
+
+    await controller.download(SID)
+
+    expect(downloads.save).toHaveBeenCalledWith({
+      path: `/api/session.export?sessionId=${SID}&includeDescendants=true`,
+      suggestedFilename: 'dsh-session-session-export-controller.zip',
+    })
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(controller.store.getSnapshot().bySession[SID]).toEqual({
+      open: true, status: 'success', error: null,
+    })
+  })
+
+  it('clears the entry when the save is cancelled', async () => {
+    const controller = new SessionLogDownloadController(shellDownloads(async () => 'cancelled'))
+
+    await controller.download(SID)
+
+    expect(controller.store.getSnapshot().bySession[SID]).toBeUndefined()
+  })
+
+  it('publishes the error state when the save rejects', async () => {
+    const controller = new SessionLogDownloadController(
+      shellDownloads(async () => { throw new Error('save dialog unavailable') }),
+    )
+
+    await controller.download(SID)
+
+    expect(controller.store.getSnapshot().bySession[SID]).toEqual({
+      open: true, status: 'error', error: 'save dialog unavailable',
+    })
   })
 
   it('defaults dialog openness when state is externally cleared before settlement', async () => {
     const success = Promise.withResolvers<Response>()
-    const successful = new SessionLogDownloadController(() => success.promise, vi.fn())
+    const successful = new SessionLogDownloadController(pageDownloads(), () => success.promise)
     const successRun = successful.download(SID)
     successful.store.set({ bySession: {} })
     success.resolve(new Response('zip'))
@@ -123,7 +166,7 @@ describe('SessionLogDownloadController', () => {
     expect(successful.store.getSnapshot().bySession[SID]?.open).toBe(true)
 
     const failure = Promise.withResolvers<Response>()
-    const failing = new SessionLogDownloadController(() => failure.promise, vi.fn())
+    const failing = new SessionLogDownloadController(pageDownloads(), () => failure.promise)
     const failureRun = failing.download(SID)
     failing.store.set({ bySession: {} })
     failure.reject(new Error('failed after clear'))
@@ -132,15 +175,8 @@ describe('SessionLogDownloadController', () => {
   })
 })
 
-describe('browser download helpers', () => {
-  it('sanitizes the archive filename and hands the URL to a download anchor', () => {
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-
+describe('archive filename', () => {
+  it('collapses an untrusted Session id into one safe download name', () => {
     expect(sessionLogZipFilename('a/b' as SessionId)).toBe('dsh-session-a_b.zip')
-    downloadUrl('http://host/api/session.export?sessionId=a', 'archive.zip')
-    expect(click).toHaveBeenCalledOnce()
-    const anchor = click.mock.instances[0] as HTMLAnchorElement
-    expect(anchor.href).toBe('http://host/api/session.export?sessionId=a')
-    expect(anchor.download).toBe('archive.zip')
   })
 })

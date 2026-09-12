@@ -30,6 +30,7 @@ kind: "package-group"
 | [`modules/`](modules/README.zh.md) | 加载浏览器侧客户端模块 | `ctx.clientModules` / `ctx.modules` |
 | [`connection/`](connection/README.zh.md) | 维护浏览器与宿主之间的 RPC 通信与事件投递 | `ctx.connection` |
 | [`file-upload/`](file-upload/README.zh.md) | 在页面线程之外发送原始 Blob 与字节流请求体 | `ctx.fileUpload` |
+| [`file-download/`](file-download/README.zh.md) | 经页面或嵌入 shell 把 Host 文件保存到用户机器 | `ctx.fileDownload` |
 | [`store/`](store/README.zh.md) | 提供不依赖 React 的 observable 与快照存储原语 | — |
 | [`hmr/`](hmr/README.zh.md) | 在开发期间刷新客户端插件 | — |
 | [`locale/`](locale/README.zh.md) | 提供本地化偏好与消息词典 | `ctx.locale` |
