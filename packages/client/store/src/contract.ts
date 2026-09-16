@@ -82,6 +82,14 @@ export interface StoreInstance<T, A extends ActionsDecl<T>> {
    * must not leave orphaned storage keys behind.
    */
   clearPersisted(): void
+  /**
+   * Release this instance's live subscriptions — the persistence writer above
+   * all. The framework calls it when the last holder unloads: without it the
+   * writer outlives the plugin and, on a teardown-and-rebuild, re-persists the
+   * departing state after a caller has cleared it. Optional so a hand-built
+   * test double need not supply it.
+   */
+  dispose?(): void
 }
 
 /**
