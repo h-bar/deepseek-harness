@@ -35,6 +35,13 @@ export interface SnapshotStore<T> extends ObservableSnapshot<T> {
    * @param next - next state.
    */
   set(next: T): void
+  /**
+   * Stop this store's persistence writer. A persisted store subscribes to its
+   * own state to mirror it into localStorage; that subscription must be released
+   * when the store is dropped, or it outlives its owner and re-persists after a
+   * teardown. No-op for a non-persisted store.
+   */
+  dispose(): void
 }
 
 /**
@@ -106,7 +113,7 @@ export function createSnapshotStore<T>(
   // the immer middleware without its setState-signature mutator generics).
   const withSelector = subscribeWithSelector(() => init)
   const api: StoreApi<T> = createStore<T>()(withSelector)
-  if (opts?.persist) attachPersistence(api, opts.persist.name)
+  const stopPersistence = opts?.persist ? attachPersistence(api, opts.persist.name) : undefined
 
   let subscribe = (fn: () => void) => api.subscribe(() => {
     notifySubscribers([fn], '[client-store]')
@@ -132,6 +139,7 @@ export function createSnapshotStore<T>(
     set: (next) => {
       api.setState(devFreeze(next), true)
     },
+    dispose: () => { stopPersistence?.() },
   }
 }
 
@@ -143,11 +151,11 @@ export function createSnapshotStore<T>(
  * because the corruption happens before serialization. Storage failures
  * (quota, private mode) only disable persistence, never break the store.
  */
-function attachPersistence<T>(api: StoreApi<T>, name: string): void {
+function attachPersistence<T>(api: StoreApi<T>, name: string): (() => void) | undefined {
   // Non-browser runs (node e2e booting the client tree) have no localStorage:
   // persistence silently disables — same contract as a storage failure, minus
   // the per-store console noise a ReferenceError would produce.
-  if (typeof localStorage === 'undefined') return
+  if (typeof localStorage === 'undefined') return undefined
   try {
     const raw = localStorage.getItem(name)
     if (raw !== null) {
@@ -156,7 +164,9 @@ function attachPersistence<T>(api: StoreApi<T>, name: string): void {
   } catch (error) {
     console.error(`snapshot store '${name}' rehydration failed:`, error)
   }
-  api.subscribe((state) => {
+  // Returned so the store's dispose() can stop the writer: left attached, it
+  // outlives the store and re-persists state after the owner is gone.
+  return api.subscribe((state) => {
     try {
       localStorage.setItem(name, JSON.stringify(state))
     } catch (error) {
@@ -244,6 +254,7 @@ export function defineStore<T, A extends ActionsDecl<T>>(
             // cleanup — the same non-fatal contract as attachPersistence.
           }
         },
+        dispose: () => { store.dispose() },
       }
     },
   }

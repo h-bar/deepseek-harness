@@ -685,6 +685,7 @@ export class SlotRegistry extends Service {
   private releaseStoreScope(key: string): void {
     for (const record of this._stores.values()) {
       if (record.scope === 'root') continue
+      record.instances.get(key)?.dispose?.()
       record.instances.delete(key)
     }
     for (const axis of this._factoryStores.values()) {
@@ -702,7 +703,7 @@ export class SlotRegistry extends Service {
     record.refs += 1
   }
 
-  /** Drop one reference; the last holder's unload drops the record (instances go with it — engine stores need no explicit dispose). */
+  /** Drop one reference; the last holder's unload disposes each instance (releasing its persistence writer) and drops the record. */
   private _release(handle: EngineStoreHandle): void {
     const record = this._stores.get(handle)
     /* v8 ignore next -- defensive: release only runs from a disposer whose
@@ -711,6 +712,9 @@ export class SlotRegistry extends Service {
     if (record === undefined) return
     record.refs -= 1
     if (record.refs !== 0) return
+    // Instances subscribe their own state to localStorage; left attached, that
+    // writer outlives the plugin and re-persists after a teardown clears it.
+    for (const instance of record.instances.values()) instance.dispose?.()
     this._stores.delete(handle)
   }
 }
