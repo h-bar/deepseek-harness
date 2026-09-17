@@ -6,6 +6,7 @@
  * reference graph closes a cycle through ui-sidebar → ui-layout → ui-theme.
  * The settings SLOT types (what registrants contribute) stay in ui-settings.
  */
+import type { ReactNode } from 'react'
 import type { ConnectionState } from '@deepseek-ai/dsh-client-connection/client'
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
@@ -22,6 +23,8 @@ export interface SettingsSectionRow {
   id: string
   order: number
   label: string
+  /** The registrant's nav glyph, when it supplied one; else the shell picks by id. */
+  icon?: ReactNode
 }
 
 /** One ordered onboarding step projected from a slot registration. */
