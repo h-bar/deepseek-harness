@@ -26,8 +26,14 @@ const RECOVERY_CONFIRMATION_MS = 2_000
 /** Minimum visible time for the connecting pill; shorter attempts read as flicker. */
 const CONNECTING_MIN_VISIBLE_MS = 800
 
-/** Nav glyph by section id; unknown ids fall back to the settings gear. */
-function navIcon(id: string) {
+/**
+ * Nav glyph for a row: the registrant's own icon when it supplied one (wrapped
+ * so the rail's `flex: none` applies whatever node it passed), else a glyph by
+ * section id, else the settings gear.
+ */
+function navIcon(row: SettingsSectionRow) {
+  if (row.icon !== undefined) return <span className={css.navIcon}>{row.icon}</span>
+  const id = row.id
   if (id === 'models') return <IconDataOutline16 className={css.navIcon} size={16} />
   if (id === 'agent-presets') return <IconAgentPresetOutline16 className={css.navIcon} size={16} />
   if (id === 'plugins') return <IconPersonalizationOutline16 className={css.navIcon} size={16} />
@@ -82,7 +88,7 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
                 aria-current={row.id === active ? 'true' : undefined}
                 onClick={() => { onSelect(row.id) }}
               >
-                {navIcon(row.id)}
+                {navIcon(row)}
                 <span className={css.navLabel}>{row.label}</span>
               </button>
             ))}
