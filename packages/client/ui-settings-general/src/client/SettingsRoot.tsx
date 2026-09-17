@@ -10,7 +10,10 @@
  * sessions-derived empty-Hero fact is active. Visible dialog chrome belongs
  * to the step, so a mounted-but-deciding step paints nothing here.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import {
+  cloneElement, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState,
+  type ReactElement,
+} from 'react'
 import clsx from 'clsx'
 import {
   ConnectionIndicator,
@@ -27,12 +30,18 @@ const RECOVERY_CONFIRMATION_MS = 2_000
 const CONNECTING_MIN_VISIBLE_MS = 800
 
 /**
- * Nav glyph for a row: the registrant's own icon when it supplied one (wrapped
- * so the rail's `flex: none` applies whatever node it passed), else a glyph by
- * section id, else the settings gear.
+ * Nav glyph for a row: the registrant's own icon when it supplied one, else a
+ * glyph by section id, else the settings gear. The registrant's icon takes the
+ * shell's own `navIcon` class so it centers and sizes exactly like the built-in
+ * ones — a wrapper element would inherit the cell's line-height and baseline and
+ * sit off-center.
  */
 function navIcon(row: SettingsSectionRow) {
-  if (row.icon !== undefined) return <span className={css.navIcon}>{row.icon}</span>
+  if (row.icon !== undefined) {
+    return isValidElement(row.icon)
+      ? cloneElement(row.icon as ReactElement<{ className?: string | undefined }>, { className: css.navIcon })
+      : row.icon
+  }
   const id = row.id
   if (id === 'models') return <IconDataOutline16 className={css.navIcon} size={16} />
   if (id === 'agent-presets') return <IconAgentPresetOutline16 className={css.navIcon} size={16} />
