@@ -47,7 +47,13 @@ export const inject = ['slots', 'locale', 'uiConversation', 'remote', 'remote.se
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  const opener = new PresentedOpenController()
+  // A shell that owns the transport carries the Host desktop routes too:
+  // resolved against the page, they would name the shell's own origin, which
+  // is not the Host (the same rule the Remote carrier already follows).
+  const transport = (globalThis as {
+    __DSH_TRANSPORT__?: { fetch?: (input: string | URL, init?: RequestInit) => Promise<Response> }
+  }).__DSH_TRANSPORT__
+  const opener = new PresentedOpenController(transport?.fetch)
   const summaries = new ChangesSummaryStore()
   const diffs = new ChangesDiffStore()
   ctx.effect(() => () => Promise.all([opener.dispose(), summaries.dispose(), diffs.dispose()]))

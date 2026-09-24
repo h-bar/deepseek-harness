@@ -15,6 +15,9 @@ export type PresentedOpenFailure = 'openError' | 'revealError' | null
 /** State published on the owning file card. */
 export type PresentedOpenPhase = 'opening' | 'opened' | 'revealing' | 'revealed' | 'error' | 'revealError' | 'nativeUnavailable'
 
+/** HTTP carrier for the Host desktop routes. */
+type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
+
 /** One browser plugin's file-open requests, cancelled when that plugin is disposed. */
 export class PresentedOpenController {
   /** File action URLs key the state across Sessions, turns, and both clickable surfaces. */
@@ -26,6 +29,13 @@ export class PresentedOpenController {
   private metadata = new AbortController()
   private readonly lifetime = new AbortController()
   private readonly pending = new Set<Promise<void | PresentedOpenFailure>>()
+
+  /**
+   * @param fetcher - HTTP carrier for the document-relative Host routes. A
+   * shell that owns the transport supplies its own; the served page's default
+   * resolves against its document base.
+   */
+  constructor(private readonly fetcher: Fetch = (input, init) => fetch(input, init)) {}
 
   /**
    * Open a declared file once while a request for the same coordinates is pending.
@@ -103,7 +113,7 @@ export class PresentedOpenController {
   private async readHost(signal: AbortSignal): Promise<void> {
     let host: PresentedHost | 'error' = 'error'
     try {
-      const response = await fetch(PRESENT_HOST_ROUTE, { signal })
+      const response = await this.fetcher(PRESENT_HOST_ROUTE, { signal })
       if (response.ok) {
         const value: unknown = await response.json()
         if (isPresentedHost(value)) host = value
@@ -132,7 +142,7 @@ export class PresentedOpenController {
     try {
       const target = action === 'reveal' ? `${url}&action=reveal`
         : application === undefined ? url : `${url}&application=${encodeURIComponent(application)}`
-      const response = await fetch(target, { method: 'POST', signal: this.lifetime.signal })
+      const response = await this.fetcher(target, { method: 'POST', signal: this.lifetime.signal })
       if (!response.ok) phase = response.status === 422 ? 'nativeUnavailable' : failure
     } catch {
       // Transport failures share the retryable card state with Host open failures.
