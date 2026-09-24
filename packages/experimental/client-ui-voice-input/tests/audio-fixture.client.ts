@@ -1,5 +1,8 @@
 /** Controlled browser audio devices with real Recording ownership and conversion. */
 import { vi } from 'vitest'
+// Declaration emit names each spy's `Procedure` through this module; without the
+// explicit reference an embedding workspace's store layout fails TS2883.
+import type {} from '@vitest/spy'
 import { Recording } from '../src/client/audio.ts'
 
 /**

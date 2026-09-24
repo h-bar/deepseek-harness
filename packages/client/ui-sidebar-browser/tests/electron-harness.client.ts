@@ -1,5 +1,8 @@
 /** Native webview events controlled by each test; presentation and navigation stay real. */
 import { vi } from 'vitest'
+// Declaration emit names each spy's `Procedure` through this module; without the
+// explicit reference an embedding workspace's store layout fails TS2883.
+import type {} from '@vitest/spy'
 import type { DesktopBrowserBridge, DesktopBrowserLeaseId, DesktopBrowserReservation } from '../src/types.ts'
 import type { BrowserTabState } from '../src/client/browser/BrowserPersistence.ts'
 import { createElectronPage } from '../src/client/electron/pages.ts'

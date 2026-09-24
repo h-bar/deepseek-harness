@@ -4976,6 +4976,9 @@ importers:
       '@types/react-dom':
         specifier: ~18.3.0
         version: 18.3.7(@types/react@18.3.31)
+      '@vitest/spy':
+        specifier: ^4.1.8
+        version: 4.1.8
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -7352,6 +7355,9 @@ importers:
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
+      '@vitest/spy':
+        specifier: ^4.1.8
+        version: 4.1.8
       react:
         specifier: ^18.2.0
         version: 18.3.1
