@@ -459,6 +459,32 @@ export class ClientModuleSystem implements ClientModuleLoader {
     }
   }
 
+  /**
+   * Adopt (or refresh) graph rows composed after boot. An embedding shell that
+   * mounts roster rows it fetched itself has factories with no graph record,
+   * and a row the graph never carried cannot serve its package-local chunks.
+   * Adopt before executing the row's bundle so its factory records the
+   * revision; a revision change on an already-cached row invalidates it.
+   * @param rows - boot-entry wire rows; each `url` is that row's single-resource combo reference.
+   */
+  adoptRows(rows: readonly Pick<BootModuleRow, 'id' | 'url' | 'rev'>[]): void {
+    for (const row of rows) {
+      if (this.bootstrapIds.has(row.id)) {
+        throw new Error(`client-modules: bootstrap module ${row.id} is not adoptable`)
+      }
+      const existing = this.graphRows.get(row.id)
+      this.graphRows.set(row.id, {
+        id: row.id, url: row.url, rev: row.rev, initialUrl: row.url,
+        inject: existing?.inject ?? [], external: existing?.external ?? [],
+      })
+      const cachedRevision = this.factories.get(row.id)?.rev ?? this.reloadTargets.get(row.id)?.rev
+      if (cachedRevision !== undefined && cachedRevision !== row.rev) {
+        this.invalidate(row.id, row.rev)
+        removeOwnedStyles(row.id)
+      }
+    }
+  }
+
   invalidate(id: string, rev?: string): void {
     const normalized = stripClientSuffix(id)
     if (this.bootstrapIds.has(normalized)) return
