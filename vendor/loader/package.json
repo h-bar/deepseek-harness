@@ -15,11 +15,11 @@
   "types": "lib/types/index.d.ts",
   "exports": {
     ".": {
-      "types": "./lib/types/index.d.ts",
       "browser": {
         "types": "./lib/types/browser.d.ts",
         "default": "./lib/browser.js"
       },
+      "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
     "./src/*": "./src/*",
