@@ -265,7 +265,7 @@ class Hmr extends Service {
     for (const baseUrl in nameMap) {
       for (const name of nameMap[baseUrl]) {
         try {
-          const { url } = await this._resolve(name, baseUrl, {})
+          const { url } = await this._resolve(name, await this.ctx.loader.baseUrlOf(name, baseUrl), {})
           if (this.declined.has(url)) continue
           const job = this.internal.loadCache.get(url)
           const plugin = this.ctx.loader.unwrapExports(job?.module?.getNamespace())

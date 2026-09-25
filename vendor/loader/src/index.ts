@@ -48,6 +48,13 @@ export namespace Loader {
   export interface Config {
     /** Base URL used to resolve relative plugin specifiers and config paths. */
     baseUrl?: string
+    /**
+     * Host resolution of plugin names: the base URL `name` resolves from in place of the importing
+     * tree's `baseUrl`, or `undefined` to keep it. An error it throws fails that entry's import.
+     * Without Node's internal module loader a bare name resolves from the Loader's own module, so
+     * the base then applies to relative names only.
+     */
+    resolveFrom?: (name: string, baseUrl: string) => string | undefined | Promise<string | undefined>
   }
 
   /** Intercept config used when other plugins depend on `loader`. */
@@ -179,6 +186,11 @@ export class Loader extends EntryTree {
       if (fiber === next) return
       fiber = next
     }
+  }
+
+  /** Return the base URL a plugin `name` imported from a tree at `baseUrl` resolves from. */
+  async baseUrlOf(name: string, baseUrl: string): Promise<string> {
+    return await this.config.resolveFrom?.(name, baseUrl) ?? baseUrl
   }
 
   /** Hook for hosts that can restart the process on full-reload requests. */
