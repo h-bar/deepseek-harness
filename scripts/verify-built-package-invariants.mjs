@@ -18,12 +18,25 @@ import { parseArgs } from 'node:util'
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const { values: options } = parseArgs({
   args: process.argv.slice(2),
-  options: { 'packages-root': { type: 'string' }, 'loader-url': { type: 'string' } },
+  options: {
+    'packages-root': { type: 'string' },
+    'loader-url': { type: 'string' },
+    'loader-browser': { type: 'string' },
+  },
 })
 const packagesRoot = resolve(options['packages-root'] ?? repositoryRoot)
 const loaderUrl = options['loader-url']
   ?? pathToFileURL(resolve(repositoryRoot, 'vendor/loader/lib/index.js')).href
 const failures = []
+
+// The Loader's browser entry is served to pages whose bundlers take the `browser` condition;
+// a Node import or a `process` read in it is a page that cannot load it.
+const loaderBrowser = resolve(options['loader-browser'] ?? resolve(repositoryRoot, 'vendor/loader/lib/browser.js'))
+const browserSource = readFileSync(loaderBrowser, 'utf8')
+const nodeReads = ['node:', 'process.'].filter(probe => browserSource.includes(probe))
+if (nodeReads.length > 0) {
+  failures.push(`@deepseek-ai/cordis-plugin-loader: ${loaderBrowser} holds ${nodeReads.join(', ')}`)
+}
 const manifests = globSync('packages/*/*/package.json', { cwd: packagesRoot }).sort()
 let companionCount = 0
 const { default: Loader } = await import(loaderUrl)
@@ -78,7 +91,7 @@ for (const manifestPath of manifests) {
 }
 
 if (failures.length > 0) {
-  console.error('verify-built-package-invariants: compiled companion failures:')
+  console.error('verify-built-package-invariants: failures:')
   for (const failure of failures) console.error(`  ${failure}`)
   process.exit(1)
 }

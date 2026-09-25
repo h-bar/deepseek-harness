@@ -52,6 +52,12 @@ export class Entry {
 
   _initTask?: Promise<void>
 
+  /**
+   * The error the last import of this entry's plugin threw, cleared when an import starts. An
+   * activation error is the fiber's own, which `fiber.await()` rethrows.
+   */
+  public importError?: unknown
+
   constructor(public loader: Loader) {
     this.ctx = loader.ctx.extend({ [Entry.key]: this })
     this.context.emit('loader/entry-init', this)
@@ -174,9 +180,11 @@ export class Entry {
 
   private async _init() {
     let exports: any
+    this.importError = undefined
     try {
       exports = await this.parent.tree.import(this.options.name, this.getOuterStack)
     } catch (error) {
+      this.importError = error
       this.ctx.logger.error(error)
       return
     } finally {

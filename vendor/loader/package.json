@@ -16,7 +16,10 @@
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
-      "browser": "./lib/browser.js",
+      "browser": {
+        "types": "./lib/types/browser.d.ts",
+        "default": "./lib/browser.js"
+      },
       "default": "./lib/index.js"
     },
     "./src/*": "./src/*",
