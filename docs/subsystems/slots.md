@@ -127,6 +127,8 @@ root
 │     ├─ settings.action
 │     ├─ settings.close
 │     ├─ settings.onboarding
+│     ├─ settings.launcher
+│     │  └─ settings.launcher.menu.item
 │     └─ settings.section
 │        ├─ settings.general.item
 │        ├─ settings.models.provider-card
