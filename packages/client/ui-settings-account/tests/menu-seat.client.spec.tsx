@@ -6,11 +6,11 @@
  * stubs `renderSlot`, so declaration and rendering are only real here.
  */
 import { act, cleanup, fireEvent } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, vi } from 'vitest'
 import { MenuItemButton } from '@deepseek-ai/dsh-client-ui-primitives'
 import { createClientTest, webApp, type TestClient } from '@deepseek-ai/dsh-client-test-runtime/src/assembly/index.ts'
 
-const it = createClientTest({ roster: webApp }, { mount: true })
+const test = createClientTest({ roster: webApp }, { mount: true })
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -25,7 +25,7 @@ async function started(start: () => Promise<TestClient>): Promise<TestClient> {
 
 // The case boots the whole client composition, so it outgrows vitest's 5s
 // default when a lane runs it beside the rest of the client packages.
-it('lets another plugin contribute a row into the account menu', { timeout: 30_000 }, async ({ start }) => {
+test('lets another plugin contribute a row into the account menu', { timeout: 30_000 }, async ({ start }) => {
   vi.stubGlobal('dshDesktop', {})
   const client = await started(start)
   // Registering proves the seat exists: `slots.register` throws for an
