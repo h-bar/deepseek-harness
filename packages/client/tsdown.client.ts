@@ -233,28 +233,38 @@ function clientLibraryConfig(
     fixedExtension: false,
     dts: false,
     clean: false,
-    deps: {
-      // Saddle fork: the Node half inlines every *package* except Node builtins and
-      // the framework (cordis). Upstream keeps production dependencies as imports
-      // because the official package runs from a real install that has them on
-      // disk; a *vendored* replacement does not — it sits under Saddle's bundle
-      // (`<profile>/node_modules/@h-bar/dsh-saddle/vendor/…`), where no sibling
-      // node_modules holds those packages (the official one is inside app.asar).
-      // Leaving them as imports makes the vendored Node half unresolvable at
-      // runtime. See h-bar/dsh-saddle docs/dev-loop.md §5.
-      //
-      // Both sides are scoped to bare specifiers: `deps` classifies package
-      // names, and a relative request (a stylesheet, an asset, a sibling module)
-      // belongs to the bundler's own resolution, not to this policy. Leaving
-      // relative requests unclaimed is also what keeps the Client pass's CSS
-      // virtual-id plugins reachable — claiming them here sends the raw
-      // `.module.css` file through rolldown instead (measured: 5 css-guard
-      // errors in ui-chat / ui-primitives).
-      neverBundle: (specifier: string) =>
-        isBuiltin(specifier) || specifier === '@deepseek-ai/cordis' || !isBareSpecifier(specifier),
-      alwaysBundle: (specifier: string) =>
-        isBareSpecifier(specifier) && !isBuiltin(specifier) && specifier !== '@deepseek-ai/cordis',
-    },
+    deps: VENDOR_SELF_CONTAINED
+      ? {
+        // Saddle fork, replacement-artifact build only: the artifact lives under
+        // Saddle's bundle (`<profile>/node_modules/@h-bar/dsh-saddle/vendor/…`),
+        // where no sibling node_modules holds the official production
+        // dependencies (the official package sits in app.asar with its own
+        // siblings), so leaving them as imports makes the vendored Node half
+        // unresolvable at runtime. The Node half therefore inlines every
+        // *package* except Node builtins and the framework (cordis). See
+        // h-bar/dsh-saddle docs/dev-loop.md §5.
+        //
+        // Both sides are scoped to bare specifiers: `deps` classifies package
+        // names, and a relative request (a stylesheet, an asset, a sibling
+        // module) belongs to the bundler's own resolution. Claiming relative
+        // requests here sends raw `.module.css` through rolldown instead of the
+        // Client pass's CSS virtual-id plugins (measured: 5 css-guard errors).
+        neverBundle: (specifier: string) =>
+          isBuiltin(specifier) || specifier === '@deepseek-ai/cordis' || !isBareSpecifier(specifier),
+        alwaysBundle: (specifier: string) =>
+          isBareSpecifier(specifier) && !isBuiltin(specifier) && specifier !== '@deepseek-ai/cordis',
+      }
+      : {
+        // The Node half runs from a real install: a production dependency is on
+        // disk there and stays an import, everything else inlines. Stating both
+        // halves takes the artifact off tsdown's getProductionDeps fallback, where
+        // moving a dependency between npm sections silently re-bundles it.
+        // Builtins keep tsdown's own handling (neither side claims them).
+        neverBundle: (specifier: string) =>
+          matchesSpecifier(productionExternals(id), specifier),
+        alwaysBundle: (specifier: string) =>
+          !isBuiltin(specifier) && !matchesSpecifier(productionExternals(id), specifier),
+      },
     ...overrides,
   }
 }
@@ -354,6 +364,14 @@ interface WorkspaceManifest {
 
 const manifestCache = new Map<string, WorkspaceManifest>()
 const clientExternalCache = new Map<string, ReadonlySet<string>>()
+const productionExternalCache = new Map<string, readonly RegExp[]>()
+
+/**
+ * Saddle fork: set for the replacement-artifact build only. A vendored artifact
+ * cannot resolve its production dependencies, so that build inlines them (see
+ * `clientLibraryConfig`); every other build states upstream's rule.
+ */
+const VENDOR_SELF_CONTAINED = process.env.DSH_VENDOR_SELF_CONTAINED === '1'
 
 /**
  * Read one workspace package's manifest. Located by package name rather than by
@@ -377,6 +395,31 @@ function workspaceManifest(id: string): WorkspaceManifest {
     return manifest
   }
   throw new Error(`tsdown: no packages/*/*/package.json declares the name ${id}`)
+}
+
+/**
+ * External patterns for one package's Node half: its own production sections,
+ * subpaths included.
+ * @param id - package name, as spelled at the preset call site.
+ * @returns one `^name(/|$)` pattern per production dependency, name-sorted.
+ */
+function productionExternals(id: string): readonly RegExp[] {
+  const cached = productionExternalCache.get(id)
+  if (cached !== undefined) return cached
+  const manifest = workspaceManifest(id)
+  const names = new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.peerDependencies ?? {}),
+    ...Object.keys(manifest.optionalDependencies ?? {}),
+  ])
+  const patterns = [...names].sort().map(name => new RegExp(`^${escapeSpecifier(name)}(/|$)`))
+  productionExternalCache.set(id, patterns)
+  return patterns
+}
+
+/** Whether an import specifier is the package a pattern names, or one of its subpaths. */
+function matchesSpecifier(patterns: readonly RegExp[], specifier: string): boolean {
+  return patterns.some(pattern => pattern.test(specifier))
 }
 
 /**
