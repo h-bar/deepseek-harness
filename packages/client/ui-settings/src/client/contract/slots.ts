@@ -15,6 +15,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Optional sidebar account launcher; opens the shell-owned settings panel. */
     'settings.launcher': { kind: 'single'; scope: 'root'; owner: SettingsLauncherOwnerProps }
+    /**
+     * The rows of the account launcher's open menu, in ascending `order`,
+     * contributed by any client plugin. The launcher renders them inside the
+     * menu it already owns, after the rows it ships (Settings, Contact us) and
+     * before the account-identity row (Sign in/Sign out). Each entry renders
+     * one `role="menuitem"` `<button>` (ui-primitives' `MenuItemButton` gives
+     * it the host styling), decides its own visibility, and dismisses the menu
+     * through the owner's `dismiss`. Absent contributions leave the menu
+     * exactly as it is without them.
+     */
+    'settings.launcher.menu.item': { kind: 'list'; scope: 'root'; owner: SettingsLauncherMenuItemOwnerProps }
 
     /**
      * The sidebar-foot trigger row content: icon + label, supplied as slot
@@ -152,4 +163,16 @@ export interface SettingsLauncherOwnerProps {
   openSettings: () => void
   /** @param id - registered onboarding editor to open explicitly. */
   openOnboarding: (id: string) => void
+}
+
+/** Owner share of one account-launcher menu row. */
+export interface SettingsLauncherMenuItemOwnerProps {
+  /**
+   * Dismiss the menu.
+   *
+   * An item that acts MUST call this: the menu is the launcher's, and it
+   * closes on its own rows only. An item that leaves it open leaves a menu
+   * floating over content the action may have just replaced.
+   */
+  dismiss: () => void
 }

@@ -285,6 +285,10 @@ export function apply(ctx: Context): void {
   }
   ctx.slots.inject('settings.launcher', () => ctx.slots.register({
     name: 'settings.launcher', locale: 'settings.account', inject: () => operations,
+    // The launcher owns the menu it opens, so it owns the row seat other
+    // plugins contribute into it. An empty seat renders nothing extra, so the
+    // menu the account alone demonstrates is unchanged.
+    children: { 'settings.launcher.menu.item': { kind: 'list', scope: 'root' } },
   }, AccountMenu))
   ctx.slots.inject('settings.section', () => {
     let unregister: (() => void) | undefined
