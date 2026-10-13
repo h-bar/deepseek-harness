@@ -23,7 +23,9 @@ async function started(start: () => Promise<TestClient>): Promise<TestClient> {
   return client
 }
 
-it('lets another plugin contribute a row into the account menu', async ({ start }) => {
+// The case boots the whole client composition, so it outgrows vitest's 5s
+// default when a lane runs it beside the rest of the client packages.
+it('lets another plugin contribute a row into the account menu', { timeout: 30_000 }, async ({ start }) => {
   vi.stubGlobal('dshDesktop', {})
   const client = await started(start)
   // Registering proves the seat exists: `slots.register` throws for an
