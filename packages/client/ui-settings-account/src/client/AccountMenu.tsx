@@ -79,11 +79,11 @@ export function AccountMenu({
       // dispatches by a table lookup rather than a chain with an unreachable
       // fallback: the identity row is a component row with its own activation.
       onSelect={(id) => {
-        const open: Record<string, () => void> = {
+        const run: Record<string, () => void> = {
           settings: () => { setOpen(false); trigger.current?.focus(); openSettings() },
           contact: () => { setOpen(false); contactUs() },
         }
-        open[id]?.()
+        run[id]?.()
       }}>
       {/* Contributed rows sit between the shipped rows and the identity row:
           this launcher owns both the menu and this render site (a `Menu`'s

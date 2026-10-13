@@ -22,8 +22,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * before the account-identity row (Sign in/Sign out). Each entry renders
      * one `role="menuitem"` `<button>` (ui-primitives' `MenuItemButton` gives
      * it the host styling), decides its own visibility, and dismisses the menu
-     * through the owner's `dismiss`. Absent contributions leave the menu
-     * exactly as it is without them.
+     * through the owner's `dismiss`. An entry may wrap that button in its own
+     * element (a tooltip, a test hook) — the list's keyboard walk and selection
+     * read the DOM, so the row is found either way. Absent contributions leave
+     * the menu exactly as it is without them.
      */
     'settings.launcher.menu.item': { kind: 'list'; scope: 'root'; owner: SettingsLauncherMenuItemOwnerProps }
 
