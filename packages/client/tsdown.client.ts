@@ -223,8 +223,6 @@ function clientLibraryConfig(
   libEntry: readonly string[],
   overrides: UserConfig = {},
 ): UserConfig {
-  const isProductionDependency = (specifier: string): boolean =>
-    matchesSpecifier(productionExternals(id), specifier)
   return {
     name: id,
     entry: [...libEntry],
@@ -236,13 +234,26 @@ function clientLibraryConfig(
     dts: false,
     clean: false,
     deps: {
-      // The Node half runs from a real install: a production dependency is on
-      // disk there and stays an import, everything else inlines. Stating both
-      // halves takes the artifact off tsdown's getProductionDeps fallback, where
-      // moving a dependency between npm sections silently re-bundles it.
-      // Builtins keep tsdown's own handling (neither side claims them).
-      neverBundle: isProductionDependency,
-      alwaysBundle: (specifier: string) => !isBuiltin(specifier) && !isProductionDependency(specifier),
+      // Saddle fork: the Node half inlines every *package* except Node builtins and
+      // the framework (cordis). Upstream keeps production dependencies as imports
+      // because the official package runs from a real install that has them on
+      // disk; a *vendored* replacement does not — it sits under Saddle's bundle
+      // (`<profile>/node_modules/@h-bar/dsh-saddle/vendor/…`), where no sibling
+      // node_modules holds those packages (the official one is inside app.asar).
+      // Leaving them as imports makes the vendored Node half unresolvable at
+      // runtime. See h-bar/dsh-saddle docs/dev-loop.md §5.
+      //
+      // Both sides are scoped to bare specifiers: `deps` classifies package
+      // names, and a relative request (a stylesheet, an asset, a sibling module)
+      // belongs to the bundler's own resolution, not to this policy. Leaving
+      // relative requests unclaimed is also what keeps the Client pass's CSS
+      // virtual-id plugins reachable — claiming them here sends the raw
+      // `.module.css` file through rolldown instead (measured: 5 css-guard
+      // errors in ui-chat / ui-primitives).
+      neverBundle: (specifier: string) =>
+        isBuiltin(specifier) || specifier === '@deepseek-ai/cordis' || !isBareSpecifier(specifier),
+      alwaysBundle: (specifier: string) =>
+        isBareSpecifier(specifier) && !isBuiltin(specifier) && specifier !== '@deepseek-ai/cordis',
     },
     ...overrides,
   }
@@ -342,7 +353,6 @@ interface WorkspaceManifest {
 }
 
 const manifestCache = new Map<string, WorkspaceManifest>()
-const productionExternalCache = new Map<string, readonly RegExp[]>()
 const clientExternalCache = new Map<string, ReadonlySet<string>>()
 
 /**
@@ -367,26 +377,6 @@ function workspaceManifest(id: string): WorkspaceManifest {
     return manifest
   }
   throw new Error(`tsdown: no packages/*/*/package.json declares the name ${id}`)
-}
-
-/**
- * External patterns for one package's Node half: its own production sections,
- * subpaths included.
- * @param id - package name, as spelled at the preset call site.
- * @returns one `^name(/|$)` pattern per production dependency, name-sorted.
- */
-function productionExternals(id: string): readonly RegExp[] {
-  const cached = productionExternalCache.get(id)
-  if (cached !== undefined) return cached
-  const manifest = workspaceManifest(id)
-  const names = new Set([
-    ...Object.keys(manifest.dependencies ?? {}),
-    ...Object.keys(manifest.peerDependencies ?? {}),
-    ...Object.keys(manifest.optionalDependencies ?? {}),
-  ])
-  const patterns = [...names].sort().map(name => new RegExp(`^${escapeSpecifier(name)}(/|$)`))
-  productionExternalCache.set(id, patterns)
-  return patterns
 }
 
 /**
@@ -427,11 +417,6 @@ function clientExternals(id: string): ReadonlySet<string> {
 /** Escape a package name for literal use inside a RegExp source. */
 function escapeSpecifier(name: string): string {
   return name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-/** Whether an import specifier is the package a pattern names, or one of its subpaths. */
-function matchesSpecifier(patterns: readonly RegExp[], specifier: string): boolean {
-  return patterns.some(pattern => pattern.test(specifier))
 }
 
 /** Render package-local dynamic imports through the Client module loader's asynchronous operation. */
