@@ -234,7 +234,16 @@ function clientLibraryConfig(
     dts: false,
     clean: false,
     deps: VENDOR_SELF_CONTAINED
-      ? {
+      ? (VENDOR_TARGET !== undefined && VENDOR_TARGET !== id
+        ? {
+          // Not the vendored package: unchanged — bare specifiers inline, relative requests
+          // stay outside this policy.
+          neverBundle: (specifier: string) =>
+            isBuiltin(specifier) || specifier === '@deepseek-ai/cordis' || !isBareSpecifier(specifier),
+          alwaysBundle: (specifier: string) =>
+            isBareSpecifier(specifier) && !isBuiltin(specifier) && specifier !== '@deepseek-ai/cordis',
+        }
+        : {
         // Saddle fork, replacement-artifact build only: the artifact lives under
         // Saddle's bundle (`<profile>/node_modules/@h-bar/dsh-saddle/vendor/…`),
         // where no sibling node_modules holds the official production
@@ -250,10 +259,10 @@ function clientLibraryConfig(
         // requests here sends raw `.module.css` through rolldown instead of the
         // Client pass's CSS virtual-id plugins (measured: 5 css-guard errors).
         neverBundle: (specifier: string) =>
-          isBuiltin(specifier) || specifier === '@deepseek-ai/cordis' || !isBareSpecifier(specifier),
+          isBuiltin(specifier) || specifier === '@deepseek-ai/cordis' || (VENDOR_TARGET === undefined && !isBareSpecifier(specifier)),
         alwaysBundle: (specifier: string) =>
           isBareSpecifier(specifier) && !isBuiltin(specifier) && specifier !== '@deepseek-ai/cordis',
-      }
+      })
       : {
         // The Node half runs from a real install: a production dependency is on
         // disk there and stays an import, everything else inlines. Stating both
@@ -372,6 +381,11 @@ const productionExternalCache = new Map<string, readonly RegExp[]>()
  * `clientLibraryConfig`); every other build states upstream's rule.
  */
 const VENDOR_SELF_CONTAINED = process.env.DSH_VENDOR_SELF_CONTAINED === '1'
+/** The package being vendored, when the caller names it. Only that package's Node half inlines
+ *  *relative* requests: its artifact must carry its sibling modules, while every other package
+ *  keeps the existing policy — claiming relatives there keeps client/CSS subtrees out of a
+ *  Node-half build (measured: 5 css-guard errors otherwise). */
+const VENDOR_TARGET = process.env.DSH_VENDOR_TARGET
 
 /**
  * Read one workspace package's manifest. Located by package name rather than by
