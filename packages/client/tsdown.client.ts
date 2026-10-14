@@ -236,12 +236,17 @@ function clientLibraryConfig(
     deps: VENDOR_SELF_CONTAINED
       ? (VENDOR_TARGET !== undefined && VENDOR_TARGET !== id
         ? {
-          // Not the vendored package: unchanged — bare specifiers inline, relative requests
-          // stay outside this policy.
+          // Not the vendored package: exactly the upstream policy — production externals stay
+          // imports, everything else inlines. The earlier version claimed *relative* requests as
+          // neverBundle, which externalizes them; every Node-half entry that re-exports siblings
+          // then ships as a barrel whose targets do not exist (`shortcuts`' lib/protocol.js ->
+          // ./configuration.js), and the whole-repo build dies in the desktop bundle with
+          // UNRESOLVED_IMPORT. Measured on a pristine tree: target named, non-target branch with
+          // `!isBareSpecifier` => exit 1; with the upstream predicate below => see the run result.
           neverBundle: (specifier: string) =>
-            isBuiltin(specifier) || specifier === '@deepseek-ai/cordis' || !isBareSpecifier(specifier),
+            matchesSpecifier(productionExternals(id), specifier),
           alwaysBundle: (specifier: string) =>
-            isBareSpecifier(specifier) && !isBuiltin(specifier) && specifier !== '@deepseek-ai/cordis',
+            !isBuiltin(specifier) && !matchesSpecifier(productionExternals(id), specifier),
         }
         : {
         // Saddle fork, replacement-artifact build only: the artifact lives under
