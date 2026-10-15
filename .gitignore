@@ -46,3 +46,7 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+
+# Scratch trees tests build inside the repository: the `packages/*/*` workspace
+# glob would otherwise claim a config-less directory and break the lib build.
+packages/*/.tsdown-client-*/

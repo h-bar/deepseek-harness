@@ -361,9 +361,31 @@ function isBareSpecifier(specifier: string): boolean {
  */
 function stylesheetAsset(source: string, importer: string): { readonly file: string, readonly fileName: string } {
   const file = sourceAssetPath(source, importer)
+  return { file, fileName: srcRelativeName(file) }
+}
+
+/** The `src`-relative name a package's own stylesheet ships under, found from the
+ *  end so a directory named `src` above the package root cannot win. */
+function srcRelativeName(file: string): string {
   const boundary = file.lastIndexOf(SOURCE_MARKER)
   if (boundary < 0) throw new Error(`tsdown: stylesheet ${file} is outside the package sources`)
-  return { file, fileName: file.slice(boundary + SOURCE_MARKER.length).split(sep).join('/') }
+  return file.slice(boundary + SOURCE_MARKER.length).split(sep).join('/')
+}
+
+/** A stylesheet's repository-relative name: a stable id fragment that is
+ *  independent of where the repository is checked out. An absolute path inside a
+ *  virtual id reaches the artifact (the id text, the CSS Modules hash derived
+ *  from it, and the emitted region comments), so one revision would build to
+ *  different bytes per build directory. */
+function cssAssetId(file: string): string {
+  const segment = relative(REPOSITORY_ROOT, file).split(sep).join('/')
+  if (segment.startsWith('../')) throw new Error(`tsdown: stylesheet ${file} is outside the repository`)
+  return segment
+}
+
+/** Resolve a stylesheet id fragment back to the file it names. */
+function cssAssetFile(relativeId: string): string {
+  return resolvePath(REPOSITORY_ROOT, relativeId)
 }
 
 /** The manifest fields the build faces read to state their own module edges. */
@@ -595,17 +617,20 @@ function clientConfig(id: string, entry: string, clientBanner?: (fileName: strin
       name: 'dsh-css-modules-inline',
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.module.css')) return null
-        const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-        return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+        const file = importer !== undefined ? sourceAssetPath(source, importer) : source
+        return CSS_VIRTUAL_PREFIX + cssAssetId(file) + CSS_VIRTUAL_SUFFIX
       },
       async load(virtualId: string) {
         if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
-        const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        const assetId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        const fileId = cssAssetFile(assetId)
         // The virtual id otherwise hides the physical stylesheet from Rolldown's watch graph.
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
+        // The class hash is derived from `filename`, so it must be the stable id —
+        // hashing the absolute path would put the checkout location into every class name.
         const { code, exports: cssExports } = transform({
-          filename: fileId,
+          filename: assetId,
           code: source,
           cssModules: { pattern: '[hash]_[local]' },
           minify: true,
@@ -621,12 +646,12 @@ function clientConfig(id: string, entry: string, clientBanner?: (fileName: strin
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith(`.css${INLINE_CSS_QUERY}`)) return null
         const stylesheet = source.slice(0, -INLINE_CSS_QUERY.length)
-        const abs = importer !== undefined ? sourceAssetPath(stylesheet, importer) : stylesheet
-        return INLINE_CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+        const file = importer !== undefined ? sourceAssetPath(stylesheet, importer) : stylesheet
+        return INLINE_CSS_VIRTUAL_PREFIX + cssAssetId(file) + CSS_VIRTUAL_SUFFIX
       },
       async load(virtualId: string) {
         if (!virtualId.startsWith(INLINE_CSS_VIRTUAL_PREFIX)) return null
-        const fileId = virtualId.slice(INLINE_CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        const fileId = cssAssetFile(virtualId.slice(INLINE_CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length))
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
         const { code } = transform({ filename: fileId, code: source, minify: true })
@@ -636,12 +661,12 @@ function clientConfig(id: string, entry: string, clientBanner?: (fileName: strin
       name: 'dsh-css-global-inline',
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.css') || source.endsWith('.module.css')) return null
-        const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-        return GLOBAL_CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+        const file = importer !== undefined ? sourceAssetPath(source, importer) : source
+        return GLOBAL_CSS_VIRTUAL_PREFIX + cssAssetId(file) + CSS_VIRTUAL_SUFFIX
       },
       async load(virtualId: string) {
         if (!virtualId.startsWith(GLOBAL_CSS_VIRTUAL_PREFIX)) return null
-        const fileId = virtualId.slice(GLOBAL_CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        const fileId = cssAssetFile(virtualId.slice(GLOBAL_CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length))
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
         const { code } = transform({ filename: fileId, code: source, minify: true })
@@ -720,11 +745,14 @@ function clientInputIsolation(id: string): {
   }
 }
 
-/** CSS loader ids append a JavaScript suffix to the physical stylesheet path. */
+/** CSS loader ids wrap a stylesheet the loader both resolves and reads; unwrap to
+ *  the physical file so input-ownership checks see the stylesheet, not the id. */
 function clientInputFile(id: string): string {
   const prefix = [CSS_VIRTUAL_PREFIX, GLOBAL_CSS_VIRTUAL_PREFIX, INLINE_CSS_VIRTUAL_PREFIX]
     .find(prefix => id.startsWith(prefix))
-  return prefix === undefined ? id : id.slice(prefix.length, -CSS_VIRTUAL_SUFFIX.length)
+  if (prefix === undefined) return id
+  const relativeId = id.slice(prefix.length, -CSS_VIRTUAL_SUFFIX.length)
+  return physicalBundleInput(relativeId) ?? cssAssetFile(relativeId)
 }
 
 /** Chain tsc's emitted maps into any Client bundle that consumes `lib/types`. */
@@ -762,11 +790,11 @@ function tscSourceMapPlugin() {
 /** Path segment separating a package's tsc output from the sources it was emitted from. */
 const TYPES_MARKER = `${sep}lib${sep}types${sep}`
 
-/** Plugin name carrying contract 1, and the marker that identifies a statically linked config. */
-const STATIC_LINKED_PLUGIN = 'dsh-static-linked-external'
-
 /** Path segment a package's sources hang under, and the root emitted assets mirror. */
 const SOURCE_MARKER = `${sep}src${sep}`
+
+/** Plugin name carrying contract 1, and the marker that identifies a statically linked config. */
+const STATIC_LINKED_PLUGIN = 'dsh-static-linked-external'
 
 /** Trailing sourcemap reference tsc appends to every emitted module. */
 const SOURCEMAP_COMMENT = /\n\/\/# sourceMappingURL=.*\s*$/
