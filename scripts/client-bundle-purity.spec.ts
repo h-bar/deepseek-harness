@@ -197,7 +197,13 @@ describe('client bundle experimental input isolation', () => {
   const experimental = '@deepseek-ai/dsh-experimental-client-ui-agent-team'
 
   function fixture() {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-client-inputs-'))
+    // Inside the repository: a stylesheet's loader id is repository-relative (so
+    // one revision builds to the same bytes in any checkout), which a directory
+    // under the system temp root cannot be named by. The scratch directory is
+    // dot-prefixed so the `packages/*/*` workspace glob never claims it — a
+    // config-less member inherits the root entry and breaks the lib build.
+    const scratch = fileURLToPath(new URL('../packages/client/', import.meta.url))
+    const root = mkdtempSync(join(scratch, '.tsdown-client-inputs-'))
     onTestFinished(() => { rmSync(root, { recursive: true, force: true }) })
     const owner = join(root, 'client')
     const entry = join(owner, 'lib/types/client/index.js')
